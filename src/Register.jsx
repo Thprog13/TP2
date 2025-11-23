@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import "./Login.css"; 
+import "./Login.css";
 import maisonneuve from "./assets/maisonneuve.jpg";
 import mailIcon from "./assets/mail.png";
 import lockIcon from "./assets/padlock.png";
@@ -11,6 +11,9 @@ import { useNavigate } from "react-router-dom";
 
 export default function Register() {
   const navigate = useNavigate();
+
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -35,12 +38,14 @@ export default function Register() {
       const user = userCredential.user;
 
       await setDoc(doc(db, "users", user.uid), {
-        email: email,
-        role: role,
+        firstName,
+        lastName,
+        email,
+        role,
+        createdAt: new Date(),
       });
 
       alert("Compte créé avec succès !");
-
       navigate("/login");
 
     } catch (err) {
@@ -62,6 +67,7 @@ export default function Register() {
         <div className="login-box">
           <h1 className="login-title">Créer un compte</h1>
 
+          {/* Rôle */}
           <div className="role">
             <button
               className={`r-btn ${role === "teacher" ? "active" : ""}`}
@@ -80,7 +86,37 @@ export default function Register() {
 
           <form onSubmit={handleSubmit}>
 
-            {/* Email */}
+            {/* Prénom (SANS icône) */}
+            <div className="input-group">
+              <label>Prénom</label>
+              <div className="input-wrapper" style={{ paddingLeft: 0 }}>
+                <input
+                  type="text"
+                  placeholder="Prénom"
+                  value={firstName}
+                  onChange={(e) => setFirstName(e.target.value)}
+                  required
+                  style={{ paddingLeft: "12px" }}
+                />
+              </div>
+            </div>
+
+            {/* Nom (SANS icône) */}
+            <div className="input-group">
+              <label>Nom</label>
+              <div className="input-wrapper" style={{ paddingLeft: 0 }}>
+                <input
+                  type="text"
+                  placeholder="Nom"
+                  value={lastName}
+                  onChange={(e) => setLastName(e.target.value)}
+                  required
+                  style={{ paddingLeft: "12px" }}
+                />
+              </div>
+            </div>
+
+            {/* Email (avec icône) */}
             <div className="input-group">
               <label>Courriel</label>
               <div className="input-wrapper">
@@ -117,7 +153,7 @@ export default function Register() {
                 <img src={lockIcon} className="input-icon" />
                 <input
                   type="password"
-                  placeholder="Mot de passe"
+                  placeholder="Confirmer"
                   value={confirm}
                   onChange={(e) => setConfirm(e.target.value)}
                   required
@@ -125,6 +161,7 @@ export default function Register() {
               </div>
             </div>
 
+            {/* Submit */}
             <button className="login-button" type="submit">
               Créer le compte
               <img src={enterIcon} className="btn-icon" />

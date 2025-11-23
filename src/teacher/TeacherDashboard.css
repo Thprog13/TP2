@@ -1,0 +1,182 @@
+/* ===== GLOBAL FIX ===== */
+html, body {
+  height: 100%;
+  overflow-y: auto;
+  margin: 0;
+  padding: 0;
+}
+
+/* ===== GLOBAL LAYOUT ===== */
+.dashboard-container {
+  display: flex;
+  min-height: calc(100vh - 65px);
+  background: #f3f4f6;
+  overflow-y: auto;
+}
+
+/* ===== SIDEBAR ===== */
+.dashboard-sidebar {
+  width: 250px;
+  background: white;
+  border-right: 1px solid #e5e7eb;
+  padding: 30px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.sidebar-title {
+  font-size: 18px;
+  font-weight: 700;
+  margin-bottom: 20px;
+  text-align: center;
+}
+
+/* Sidebar buttons */
+.sidebar-btn {
+  width: 100%;
+  padding: 14px;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  background: #f9fafb;
+  color: #374151;
+  transition: 0.2s;
+  text-align: left;
+  cursor: pointer;
+}
+
+.sidebar-btn:hover {
+  background: #eef2ff;
+  border-color: #2563eb;
+}
+
+.sidebar-btn.active {
+  background: #2563eb;
+  color: white;
+  border-color: #2563eb;
+}
+
+/* ===== CONTENT ===== */
+.dashboard-content {
+  flex: 1;
+  padding: 40px;
+  overflow-y: auto; /* scroll interne */
+}
+
+/* ===== CARD ===== */
+.card {
+  background: white;
+  padding: 40px;
+  border-radius: 10px;
+  max-width: 900px;
+  margin: 0 auto;
+  border: 1px solid #ddd;
+  box-shadow: 0 6px 15px rgba(0,0,0,0.05);
+}
+
+.card h2 {
+  font-size: 28px;
+  margin-bottom: 35px;
+  font-weight: 700;
+}
+
+/* ===== WORD LABEL ===== */
+.word-label {
+  font-size: 16px;
+  font-weight: 600;
+  margin-top: 25px;
+}
+
+/* ===== WORD INPUT ===== */
+.word-input {
+  border: none;
+  border-bottom: 1px solid #777;
+  width: 100%;
+  padding: 4px 0;
+  font-size: 16px;
+  outline: none;
+  background: transparent;
+}
+
+.word-input:focus {
+  border-bottom: 2px solid #2563eb;
+}
+
+/* ===== DESCRIPTION FIXE ===== */
+.desc-fixed {
+  width: 100%;
+  min-height: 160px;
+  border: 1px solid #777;
+  padding: 10px;
+  font-size: 16px;
+  outline: none;
+  resize: vertical;
+  border-radius: 0;
+}
+
+.desc-fixed:focus {
+  border-color: #2563eb;
+}
+
+/* ===== LISTS ===== */
+.word-list {
+  margin-left: 25px;
+  margin-top: 8px;
+}
+
+.word-list li {
+  font-size: 16px;
+}
+
+/* Add link */
+.word-add,
+.word-add-row {
+  color: #2563eb;
+  cursor: pointer;
+  font-size: 15px;
+  margin-top: 5px;
+}
+
+.word-add:hover,
+.word-add-row:hover {
+  text-decoration: underline;
+}
+
+/* ===== TABLE ===== */
+.word-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 10px;
+}
+
+.word-table th,
+.word-table td {
+  border: 1px solid #666;
+  padding: 6px;
+  font-size: 15px;
+}
+
+/* ===== IA BOX ===== */
+.analysis-box {
+  margin-top: 20px;
+  padding: 16px;
+  background: #f4f4f4;
+  border-radius: 8px;
+  border: 1px solid #ddd;
+}
+
+/* ===== PRIMARY BUTTON ===== */
+.btn-primary {
+  background: #2563eb;
+  color: white;
+  padding: 12px 20px;
+  border-radius: 10px;
+  border: none;
+  margin-top: 20px;
+  font-size: 15px;
+  cursor: pointer;
+}
+
+.btn-primary:hover {
+  background: #1e4fcf;
+}
