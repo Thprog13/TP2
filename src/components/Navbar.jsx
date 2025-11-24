@@ -18,13 +18,21 @@ export default function Navbar() {
   const [allUsers, setAllUsers] = useState([]);
   const [filteredUsers, setFilteredUsers] = useState([]);
 
+  const formatName = (value) => {
+    if (!value) return "";
+    let cleaned = value.replace(/[^A-Za-zÀ-ÖØ-öø-ÿ -]/g, "");
+    cleaned = cleaned.replace(/\s+/g, " ");
+    return cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
+  };
+
   const roleMap = {
     teacher: "Enseignant",
     enseignant: "Enseignant",
 
     admin: "Coordonnateur",
-    coordonnateur: "Coordonnateur",
-    coordinator: "Coordonnateur"
+    coordinator: "Coordonnateur",
+    coordonator: "Coordonnateur",
+    coordonnateur: "Coordonnateur"
   };
 
   useEffect(() => {
@@ -35,7 +43,9 @@ export default function Navbar() {
       if (snap.exists()) {
         const data = snap.data();
 
-        setUserName(`${data.firstName} ${data.lastName}`);
+        const fName = formatName(data.firstName);
+        const lName = formatName(data.lastName);
+        setUserName(`${fName} ${lName}`);
 
         const roleKey = data.role?.toLowerCase() || "";
         setUserRole(roleMap[roleKey] || data.role);
@@ -62,7 +72,9 @@ export default function Navbar() {
     }
 
     const results = allUsers.filter((u) =>
-      `${u.firstName} ${u.lastName}`.toLowerCase().includes(searchText.toLowerCase())
+      `${u.firstName} ${u.lastName}`
+        .toLowerCase()
+        .includes(searchText.toLowerCase())
     );
 
     setFilteredUsers(results);
@@ -85,7 +97,7 @@ export default function Navbar() {
         <img src={searchIcon} alt="search" className="search-icon" />
         <input
           type="text"
-          placeholder="Rechercher un utilisateur..."
+          placeholder="Rechercher un professeur..."
           value={searchText}
           onChange={(e) => setSearchText(e.target.value)}
         />
@@ -94,19 +106,26 @@ export default function Navbar() {
       {/* SEARCH DROPDOWN */}
       {filteredUsers.length > 0 && (
         <div className="search-results">
-          {filteredUsers.map((u) => (
-            <div key={u.id} className="search-item">
-              {u.firstName} {u.lastName} — {roleMap[u.role.toLowerCase()] || u.role}
-            </div>
-          ))}
+          {filteredUsers.map((u) => {
+            const formattedFirst = formatName(u.firstName);
+            const formattedLast = formatName(u.lastName);
+            const roleKey = u.role.toLowerCase();
+            const roleFr = roleMap[roleKey] || u.role;
+
+            return (
+              <div key={u.id} className="search-item">
+                {formattedFirst} {formattedLast} — {roleFr}
+              </div>
+            );
+          })}
         </div>
       )}
 
+      {/* RIGHT */}
       <div className="nav-right">
         <span className="user-name">
           {userName} — {userRole}
         </span>
-
         <button className="logout-btn" onClick={handleLogout}>
           <img src={exitIcon} className="logout-icon" alt="logout" />
         </button>

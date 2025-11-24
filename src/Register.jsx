@@ -20,8 +20,52 @@ export default function Register() {
   const [confirm, setConfirm] = useState("");
   const [role, setRole] = useState("teacher");
 
+  const formatName = (value) => {
+    if (!value) return "";
+
+    let cleaned = value.replace(/[^A-Za-zÀ-ÖØ-öø-ÿ -]/g, "");
+
+    cleaned = cleaned.replace(/\s+/g, " ");
+
+    cleaned = cleaned.replace(/-{2,}/g, "-");
+
+    cleaned = cleaned.replace(/\s*-\s*/g, "-");
+
+    cleaned = cleaned.trimStart();
+
+    if (cleaned.length === 0) return "";
+
+    cleaned = cleaned
+      .split(" ")
+      .map((segment) =>
+        segment
+          .split("-")
+          .map(
+            (part) =>
+              part.charAt(0).toUpperCase() + part.slice(1)
+          )
+          .join("-")
+      )
+      .join(" ");
+
+    return cleaned;
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
+
+    // Validation nom / prénom
+    if (!/^[A-Z][A-Za-zÀ-ÖØ-öø-ÿ -]*$/.test(firstName)) {
+      return alert(
+        "Le prénom doit commencer par une majuscule et contenir uniquement des lettres, espaces ou tirets."
+      );
+    }
+
+    if (!/^[A-Z][A-Za-zÀ-ÖØ-öø-ÿ -]*$/.test(lastName)) {
+      return alert(
+        "Le nom doit commencer par une majuscule et contenir uniquement des lettres, espaces ou tirets."
+      );
+    }
 
     if (password !== confirm) {
       alert("Les mots de passe ne correspondent pas.");
@@ -29,12 +73,7 @@ export default function Register() {
     }
 
     try {
-      const userCredential = await createUserWithEmailAndPassword(
-        auth,
-        email,
-        password
-      );
-
+      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
       const user = userCredential.user;
 
       await setDoc(doc(db, "users", user.uid), {
@@ -47,7 +86,6 @@ export default function Register() {
 
       alert("Compte créé avec succès !");
       navigate("/login");
-
     } catch (err) {
       console.error(err);
       alert("Erreur lors de la création du compte.");
@@ -86,7 +124,7 @@ export default function Register() {
 
           <form onSubmit={handleSubmit}>
 
-            {/* Prénom (SANS icône) */}
+            {/* Prénom */}
             <div className="input-group">
               <label>Prénom</label>
               <div className="input-wrapper" style={{ paddingLeft: 0 }}>
@@ -94,14 +132,14 @@ export default function Register() {
                   type="text"
                   placeholder="Prénom"
                   value={firstName}
-                  onChange={(e) => setFirstName(e.target.value)}
+                  onChange={(e) => setFirstName(formatName(e.target.value))}
                   required
                   style={{ paddingLeft: "12px" }}
                 />
               </div>
             </div>
 
-            {/* Nom (SANS icône) */}
+            {/* Nom */}
             <div className="input-group">
               <label>Nom</label>
               <div className="input-wrapper" style={{ paddingLeft: 0 }}>
@@ -109,14 +147,14 @@ export default function Register() {
                   type="text"
                   placeholder="Nom"
                   value={lastName}
-                  onChange={(e) => setLastName(e.target.value)}
+                  onChange={(e) => setLastName(formatName(e.target.value))}
                   required
                   style={{ paddingLeft: "12px" }}
                 />
               </div>
             </div>
 
-            {/* Email (avec icône) */}
+            {/* Email */}
             <div className="input-group">
               <label>Courriel</label>
               <div className="input-wrapper">
