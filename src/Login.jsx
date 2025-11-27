@@ -14,7 +14,8 @@ export default function Login() {
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [role, setRole] = useState("teacher");
+  // 'role' est utilisé pour l'état visuel du bouton, par défaut 'teacher'
+  const [role, setRole] = useState("teacher"); 
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -25,31 +26,36 @@ export default function Login() {
     }
 
     try {
+      // 1. Authentification Firebase
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
       const user = userCredential.user;
 
+      // 2. Récupération du rôle dans Firestore
       const ref = doc(db, "users", user.uid);
       const snap = await getDoc(ref);
 
       if (!snap.exists()) {
-        alert("Aucun compte trouvé.");
+        alert("Aucun profil utilisateur trouvé dans la base de données. Contactez l'administrateur.");
+        // Optionnel : Vous pourriez ajouter auth.signOut(auth) ici
         return;
       }
 
+      // Rôle lu dans la base de données
       const storedRole = snap.data().role;
 
-      if (storedRole !== role) {
-        alert("Rôle incorrect. Vérifiez votre sélection.");
-        return;
-      }
-
+      // 🛑 MODIFICATION : Suppression de la vérification stricte du rôle (storedRole !== role)
+      // La navigation se base UNIQUEMENT sur storedRole, pas sur la sélection UI.
+      
       console.log("Connexion réussie !");
-      console.log("Rôle :", storedRole);
+      console.log("Rôle stocké :", storedRole);
 
+      // 3. Navigation basée sur le rôle stocké
       if (storedRole === "teacher") {
         navigate("/dashboard-teacher");
-      } else {
+      } else if (storedRole === "coordonator") { // 🚨 Utilisation du rôle corrigé
         navigate("/dashboard-coordo");
+      } else {
+        alert(`Rôle utilisateur inconnu (${storedRole}). Accès refusé.`);
       }
 
     } catch (err) {
@@ -71,7 +77,7 @@ export default function Login() {
         <div className="login-box">
           <h1 className="login-title">Connexion</h1>
 
-          {/* Toggle des rôles */}
+          {/* Toggle des rôles (visuel uniquement) */}
           <div className="role">
             <button
               className={`r-btn ${role === "teacher" ? "active" : ""}`}
@@ -94,7 +100,7 @@ export default function Login() {
             <div className="input-group">
               <label>Courriel</label>
               <div className="input-wrapper">
-                <img src={mailIcon} className="input-icon" />
+                <img src={mailIcon} alt="Mail icon" className="input-icon" />
                 <input
                   type="email"
                   placeholder="email@example.com"
@@ -109,7 +115,7 @@ export default function Login() {
             <div className="input-group">
               <label>Mot de passe</label>
               <div className="input-wrapper">
-                <img src={lockIcon} className="input-icon" />
+                <img src={lockIcon} alt="Lock icon" className="input-icon" />
                 <input
                   type="password"
                   placeholder="Mot de passe"
@@ -123,7 +129,7 @@ export default function Login() {
             {/* Bouton */}
             <button className="login-button" type="submit">
               Se connecter
-              <img src={enterIcon} className="btn-icon" />
+              <img src={enterIcon} alt="Enter icon" className="btn-icon" />
             </button>
           </form>
 
