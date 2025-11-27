@@ -13,11 +13,29 @@ import {
   serverTimestamp,
   deleteDoc,
   doc,
-  orderBy, // Ajouté
-  limit, // Ajouté
+  orderBy,
+  limit,
+  setDoc,
 } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { jsPDF } from "jspdf";
+
+// ⭐ FONCTION UNIQUE pour formater l'horodatage en date et heure
+const formatDateTime = (timestamp) => {
+  if (!timestamp) return "N/A";
+  
+  // Convertit l'horodatage Firestore en objet Date
+  const date = timestamp.toDate(); 
+  
+  // Formate la date et l'heure (Ex: 27/11/2025 à 12:16)
+  return date.toLocaleDateString('fr-FR', {
+    year: 'numeric',
+    month: 'numeric',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit'
+  }).replace(',', ' à '); // Remplace la virgule (si présente) par ' à '
+};
 
 export default function TeacherDashboard() {
   const [activeTab, setActiveTab] = useState("new");
@@ -30,6 +48,9 @@ export default function TeacherDashboard() {
 
   const [analysis, setAnalysis] = useState(null);
   const [submitting, setSubmitting] = useState(false);
+
+  // NOUVEL ÉTAT : Pour savoir si on est en mode édition
+  const [editingPlan, setEditingPlan] = useState(null);
 
   const currentUser = auth.currentUser;
 
@@ -48,12 +69,21 @@ export default function TeacherDashboard() {
     };
 
     loadPlans();
-  }, [currentUser, activeTab]); // Recharge quand on change d'onglet
+  }, [currentUser, activeTab]);
 
-  /* ===== 2. Charger le modèle de formulaire ACTIF (Coordonnateur) ===== */
+  /* ===== 2. Charger le modèle de formulaire ACTIF ou celui du Plan en édition (MODIFIÉ) ===== */
   useEffect(() => {
     const loadFormTemplate = async () => {
-      // On cherche le dernier formulaire créé
+      // 1. Si on est en mode édition, on utilise le snapshot des questions du plan existant
+      if (editingPlan) {
+        setFormTemplate({
+          id: editingPlan.formId,
+          questions: editingPlan.questionsSnapshot,
+        });
+        return;
+      }
+
+      // 2. Si on est en mode création (new), on charge le dernier formulaire créé
       const q = query(
         collection(db, "formTemplates"),
         orderBy("createdAt", "desc"),
@@ -63,23 +93,29 @@ export default function TeacherDashboard() {
 
       if (!snap.empty) {
         const data = snap.docs[0].data();
-        setFormTemplate({ id: snap.docs[0].id, ...data });
+        const newFormTemplate = { id: snap.docs[0].id, ...data };
+        setFormTemplate(newFormTemplate);
 
-        // Initialiser les réponses vides pour éviter les erreurs "uncontrolled input"
+        // Initialiser les réponses vides
         const initAnswers = {};
         if (data.questions) {
           data.questions.forEach((q) => {
             initAnswers[q.id] = "";
           });
         }
-        setAnswers(initAnswers);
+        if (!editingPlan) {
+          setAnswers(initAnswers);
+        }
+      } else {
+        setFormTemplate(null);
+        setAnswers({});
       }
     };
 
     if (activeTab === "new") {
       loadFormTemplate();
     }
-  }, [activeTab]);
+  }, [activeTab, editingPlan]);
 
   /* ===== Gestion des champs dynamiques ===== */
   const handleInputChange = (questionId, value) => {
@@ -96,7 +132,7 @@ export default function TeacherDashboard() {
     // On vérifie chaque question selon sa règle (Simulation locale pour l'instant)
     formTemplate.questions.forEach((q) => {
       const answerText = answers[q.id] || "";
-      const rule = q.rule || ""; // La règle définie par le coordonnateur
+      // const rule = q.rule || ""; 
 
       // Vérification basique : longueur minimale
       if (answerText.length < 10) {
@@ -104,7 +140,7 @@ export default function TeacherDashboard() {
         feedback.push(`Question "${q.label}" : Réponse trop courte.`);
       }
 
-      // Ici, on connectera plus tard l'API OpenAI pour vérifier "rule" vs "answerText"
+      // Ici, on connectera plus tard l'API OpenAI
     });
 
     if (isConform) {
@@ -120,34 +156,30 @@ export default function TeacherDashboard() {
     }
   };
 
-  /* ===== Soumission du Plan ===== */
+  /* ===== Soumission/Mise à jour du Plan (MODIFIÉ) ===== */
   const handleSubmitPlan = async () => {
     if (!analysis) return alert("Analyse IA requise");
     setSubmitting(true);
 
-    // Génération PDF Dynamique
+    // --- 1. Génération PDF Dynamique ---
     const docPDF = new jsPDF();
     docPDF.setFontSize(18);
     docPDF.text("Plan de cours", 10, 10);
     docPDF.setFontSize(12);
 
     let y = 20;
-    // Boucle sur les questions du modèle pour générer le PDF
     if (formTemplate && formTemplate.questions) {
       formTemplate.questions.forEach((q) => {
-        // Titre de la question
         docPDF.setFont("helvetica", "bold");
         docPDF.text(`Q: ${q.label}`, 10, y);
         y += 7;
 
-        // Réponse
         docPDF.setFont("helvetica", "normal");
         const reponse = answers[q.id] || "";
         const splitText = docPDF.splitTextToSize(reponse, 180);
         docPDF.text(splitText, 10, y);
         y += splitText.length * 7 + 10;
 
-        // Saut de page si nécessaire
         if (y > 270) {
           docPDF.addPage();
           y = 10;
@@ -155,29 +187,50 @@ export default function TeacherDashboard() {
       });
     }
 
+    // --- 2. Upload PDF ---
     const blob = docPDF.output("blob");
     const filePath = `plans/${currentUser.uid}/plan_${Date.now()}.pdf`;
 
     await uploadBytes(ref(storage, filePath), blob);
     const pdfUrl = await getDownloadURL(ref(storage, filePath));
 
-    // Sauvegarde dans Firestore
-    await addDoc(collection(db, "coursePlans"), {
+    // --- 3. Sauvegarde/Mise à jour dans Firestore ---
+    const planData = {
       teacherId: currentUser.uid,
-      createdAt: serverTimestamp(),
-      formId: formTemplate?.id, // On lie au modèle utilisé
-      questionsSnapshot: formTemplate?.questions, // On garde une copie des questions au cas où le modèle change
-      answers: answers, // On sauvegarde les réponses dynamiques
-      status: analysis.status,
+      // Conserve la date de création originale, ou l'initialise
+      createdAt: editingPlan?.createdAt || serverTimestamp(),
+      updatedAt: serverTimestamp(), // Nouvelle date de mise à jour
+      formId: formTemplate?.id,
+      questionsSnapshot: formTemplate?.questions,
+      answers: answers,
+      
+      // LOGIQUE DU STATUT : 
+      status: editingPlan?.status === "Approuvé" 
+                ? "En révision" 
+                : (editingPlan?.status || "Soumis"),
+      
+      // LOGIQUE DE LA DATE D'APPROBATION : 
+      // On conserve la date d'approbation existante si elle est présente.
+      approvedAt: editingPlan?.approvedAt || null, 
+      
       pdfUrl,
-    });
+    };
 
-    alert("Plan enregistré !");
+    if (editingPlan) {
+      // MISE À JOUR (UPDATE)
+      await setDoc(doc(db, "coursePlans", editingPlan.id), planData, { merge: true });
+      alert("Plan mis à jour !");
+    } else {
+      // CRÉATION (ADD)
+      await addDoc(collection(db, "coursePlans"), planData);
+      alert("Nouveau plan enregistré !");
+    }
 
-    // Reset
+    // --- 4. Reset et nettoyage ---
     setAnswers({});
     setAnalysis(null);
     setSubmitting(false);
+    setEditingPlan(null); // Quitter le mode édition
 
     // Recharger la liste
     const q = query(
@@ -191,7 +244,7 @@ export default function TeacherDashboard() {
     setActiveTab("plans");
   };
 
-  /* ===== Delete Plan ===== */
+  /* ===== Delete Plan (Gardé tel quel) ===== */
   const handleDeletePlan = async (planId) => {
     if (!window.confirm("Voulez-vous vraiment supprimer ce plan ?")) return;
 
@@ -204,14 +257,21 @@ export default function TeacherDashboard() {
     }
   };
 
-  /* ===== Edit Plan ===== */
+  /* ===== Edit Plan (MODIFIÉ) ===== */
   const handleEditPlan = (plan) => {
-    setActiveTab("new");
-    // On recharge les réponses existantes
+    // 1. Définir le plan en cours d'édition
+    setEditingPlan(plan);
+
+    // 2. Charger les réponses du plan existant dans l'état `answers`
     if (plan.answers) {
       setAnswers(plan.answers);
     }
-    // Note : Idéalement, il faudrait aussi s'assurer qu'on utilise le bon formTemplate (plan.formId)
+
+    // 3. Réinitialiser l'analyse pour forcer une nouvelle analyse avant la soumission
+    setAnalysis(null);
+
+    // 4. Changer d'onglet pour afficher le formulaire
+    setActiveTab("new");
   };
 
   return (
@@ -231,13 +291,47 @@ export default function TeacherDashboard() {
               ) : (
                 plans.map((p) => (
                   <div key={p.id} className="submit-item">
+                    
+                    {/* ⭐ NOUVEAU : Affichage du nom du cours (titre) */}
+                    <h3>{p.answers?.[1764218126528] || "Plan sans titre"}</h3>
+                    
                     <p>
-                      <strong>Date :</strong>{" "}
-                      {p.createdAt?.toDate().toLocaleDateString()}
+                      {/* Date et heure de création */}
+                      <strong>Date de création :</strong>{" "}
+                      {formatDateTime(p.createdAt)}
                     </p>
+
+                    {/* Date et heure de modification (si plus récente) */}
+                    {p.updatedAt && 
+                        (p.createdAt && p.updatedAt.seconds > p.createdAt.seconds) && (
+                        <p>
+                            <strong>Dernière modification :</strong> {formatDateTime(p.updatedAt)}
+                        </p>
+                    )}
+                    
                     <p>
-                      <strong>Statut :</strong> {p.status}
+                      <strong>Statut :</strong>{" "}
+                      <span
+                        style={{
+                          fontWeight: "bold",
+                          color:
+                            p.status === "Approuvé"
+                              ? "green"
+                              : p.status === "Non conforme"
+                              ? "red"
+                              : "orange",
+                        }}
+                      >
+                        {p.status}
+                        {/* Date et heure d'approbation affichées à côté du statut */}
+                        {p.status === "Approuvé" && p.approvedAt && (
+                          <span className="approval-date">
+                            &nbsp;(le {formatDateTime(p.approvedAt)})
+                          </span>
+                        )}
+                      </span>
                     </p>
+                    
                     <div className="action-buttons">
                       <a
                         href={p.pdfUrl}
@@ -248,13 +342,18 @@ export default function TeacherDashboard() {
                       >
                         Voir PDF
                       </a>
-                      <button
-                        className="btn-primary"
-                        style={{ padding: "5px 10px", fontSize: "14px" }}
-                        onClick={() => handleEditPlan(p)}
-                      >
-                        Modifier
-                      </button>
+                      
+                      {/* L'édition est permise si le plan n'est pas "Approuvé" */}
+                      {p.status !== "Approuvé" && (
+                        <button
+                          className="btn-primary"
+                          style={{ padding: "5px 10px", fontSize: "14px" }}
+                          onClick={() => handleEditPlan(p)}
+                        >
+                          Modifier
+                        </button>
+                      )}
+                      
                       <button
                         className="delete-btn"
                         style={{
@@ -287,7 +386,7 @@ export default function TeacherDashboard() {
           {/* ================= NEW PLAN (DYNAMIQUE) ================= */}
           {activeTab === "new" && (
             <div className="card">
-              <h2>Remplir le plan de cours</h2>
+              <h2>{editingPlan ? "Modifier le plan" : "Remplir le plan de cours"}</h2>
 
               {!formTemplate ? (
                 <div
@@ -338,6 +437,7 @@ export default function TeacherDashboard() {
                         <textarea
                           className="desc-fixed"
                           placeholder="Votre réponse ici..."
+                          // La valeur est initialisée par l'état `answers`
                           value={answers[q.id] || ""}
                           onChange={(e) =>
                             handleInputChange(q.id, e.target.value)
@@ -373,7 +473,11 @@ export default function TeacherDashboard() {
                       disabled={submitting || !analysis}
                       style={{ opacity: submitting || !analysis ? 0.5 : 1 }}
                     >
-                      {submitting ? "Envoi en cours..." : "Soumettre le plan"}
+                      {submitting
+                        ? "Envoi en cours..."
+                        : editingPlan
+                        ? "Mettre à jour le plan" // Texte adapté en mode édition
+                        : "Soumettre le plan"}
                     </button>
                   </div>
                 </form>

@@ -75,7 +75,7 @@ export default function ValidatePlans() {
             {plans.map((plan) => (
               <tr key={plan.id}>
                 <td>{plan.teacherName}</td>
-                <td>{plan.answers?.title || "Sans titre"}</td>
+                <td>{plan.answers?.[1764218126528] || "Sans titre"}</td>
                 <td>{plan.status}</td>
                 <td>
                   <button
@@ -95,7 +95,7 @@ export default function ValidatePlans() {
             ← Retour à la liste
           </button>
 
-          <h3>Examen du plan : {selectedPlan.answers?.title}</h3>
+          <h3>Examen du plan : {selectedPlan.answers?.[1764218126528]}</h3>
           <p>
             <strong>Enseignant :</strong> {selectedPlan.teacherName}
           </p>
