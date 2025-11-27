@@ -1,18 +1,48 @@
 import React, { useEffect, useState } from "react";
-import { db } from "../firebase";
+import { db, auth } from "../firebase";
 import {
   collection,
   getDocs,
   updateDoc,
   doc,
   getDoc,
+  serverTimestamp,
 } from "firebase/firestore";
 
-// Vérifiez bien que cette ligne est présente :
 export default function ValidatePlans() {
+  // Data
   const [plans, setPlans] = useState([]);
   const [selectedPlan, setSelectedPlan] = useState(null);
+
+  // Comment
   const [comment, setComment] = useState("");
+  const [isEditingComment, setIsEditingComment] = useState(false);
+
+  // AI
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiError, setAiError] = useState(null);
+
+  // Filters
+  const [filterTeacher, setFilterTeacher] = useState("");
+  const [filterStatus, setFilterStatus] = useState("");
+  const [filterSession, setFilterSession] = useState("");
+
+  const teacherOptions = Array.from(
+    new Set(plans.map((p) => p.teacherName).filter(Boolean))
+  );
+  const statusOptions = Array.from(
+    new Set(plans.map((p) => p.status).filter(Boolean))
+  );
+  const sessionOptions = Array.from(
+    new Set(plans.map((p) => p.session).filter(Boolean))
+  );
+
+  const filteredPlans = plans.filter(
+    (p) =>
+      (!filterTeacher || p.teacherName === filterTeacher) &&
+      (!filterStatus || p.status === filterStatus) &&
+      (!filterSession || String(p.session) === String(filterSession))
+  );
 
   useEffect(() => {
     loadPlans();
@@ -23,37 +53,101 @@ export default function ValidatePlans() {
     const plansData = await Promise.all(
       snap.docs.map(async (d) => {
         const data = d.data();
-        // Récupérer le nom de l'enseignant pour l'affichage
+
+        // Teacher name
         let teacherName = "Inconnu";
         if (data.teacherId) {
           const userSnap = await getDoc(doc(db, "users", data.teacherId));
           if (userSnap.exists()) {
-            teacherName = `${userSnap.data().firstName} ${
-              userSnap.data().lastName
-            }`;
+            const u = userSnap.data();
+            teacherName = [u.firstName, u.lastName].filter(Boolean).join(" ");
           }
         }
-        return { id: d.id, ...data, teacherName };
+
+        // Coordinator name
+        let coordinatorName = null;
+        if (data.coordinatorId) {
+          const coordSnap = await getDoc(doc(db, "users", data.coordinatorId));
+          if (coordSnap.exists()) {
+            const c = coordSnap.data();
+            coordinatorName = [c.firstName, c.lastName].filter(Boolean).join(" ");
+          }
+        }
+
+        return { id: d.id, ...data, teacherName, coordinatorName };
       })
     );
     setPlans(plansData);
   };
 
+  // Lazy load AI validation info when examining
+  const loadAiResults = async (plan) => {
+    setAiLoading(true);
+    setAiError(null);
+    try {
+      let aiData = plan.aiValidation || null;
+
+      if (!aiData) {
+        // coursePlans/{id}/meta/aiValidation
+        const aiRef = doc(db, "coursePlans", plan.id, "meta", "aiValidation");
+        const aiSnap = await getDoc(aiRef);
+        if (aiSnap.exists()) aiData = aiSnap.data();
+      }
+
+      setSelectedPlan({ ...plan, aiValidation: aiData });
+      setComment(plan.coordinatorComment || "");
+    } catch (e) {
+      setAiError(e.message || String(e));
+      setSelectedPlan(plan);
+    } finally {
+      setAiLoading(false);
+    }
+  };
+
+  const getAiCommentText = (ai) => {
+    if (!ai) return null;
+    if (typeof ai.comment === "string" && ai.comment.trim()) return ai.comment.trim();
+    if (Array.isArray(ai.recommendations) && ai.recommendations.length) {
+      return ai.recommendations.join("\n");
+    }
+    if (Array.isArray(ai.flags) && ai.flags.length) {
+      return ai.flags
+        .map((f) => `- ${f.name || "Point"}${f.detail ? `: ${f.detail}` : ""}`)
+        .join("\n");
+    }
+    return null;
+  };
+
+  const formatTs = (ts) => {
+    if (!ts) return "";
+    const date = ts.toDate ? ts.toDate() : new Date(ts);
+    return date.toLocaleString();
+  };
+
   const handleUpdateStatus = async (status) => {
     if (!selectedPlan) return;
-
     try {
-      await updateDoc(doc(db, "coursePlans", selectedPlan.id), {
-        status: status,
-        coordinatorComment: comment,
+      const planRef = doc(db, "coursePlans", selectedPlan.id);
+
+      await updateDoc(planRef, {
+        status,
+        coordinatorComment: comment || "",
+        updatedAt: serverTimestamp(),
+        coordinatorId: auth.currentUser?.uid || null,
+        approvedAt:
+          status === "Approuvé"
+            ? serverTimestamp()
+            : selectedPlan.approvedAt || null,
       });
+
       alert(`Plan marqué comme : ${status}`);
       setSelectedPlan(null);
       setComment("");
+      setIsEditingComment(false);
       loadPlans();
     } catch (e) {
-      console.error(e);
-      alert("Erreur lors de la mise à jour.");
+      console.error("Erreur updateDoc:", e);
+      alert("Erreur lors de la mise à jour: " + (e.code || "") + " " + (e.message || ""));
     }
   };
 
@@ -62,84 +156,239 @@ export default function ValidatePlans() {
       <h2>Validation des plans de cours</h2>
 
       {!selectedPlan ? (
-        <table className="word-table">
-          <thead>
-            <tr>
-              <th>Enseignant</th>
-              <th>Titre du cours</th>
-              <th>Statut</th>
-              <th>Action</th>
-            </tr>
-          </thead>
-          <tbody>
-            {plans.map((plan) => (
-              <tr key={plan.id}>
-                <td>{plan.teacherName}</td>
-                <td>{plan.answers?.[1764218126528] || "Sans titre"}</td>
-                <td>{plan.status}</td>
-                <td>
-                  <button
-                    onClick={() => setSelectedPlan(plan)}
-                    style={{ fontSize: "14px", padding: "6px 12px" }}
-                  >
-                    Examiner
-                  </button>
-                </td>
+        <>
+          {/* Filters */}
+          <div style={{ display: "flex", gap: 10, marginBottom: 12, flexWrap: "wrap", alignItems: "center" }}>
+            <select value={filterTeacher} onChange={(e) => setFilterTeacher(e.target.value)}>
+              <option value="">Tous les enseignants</option>
+              {teacherOptions.map((t) => (
+                <option key={t} value={t}>
+                  {t}
+                </option>
+              ))}
+            </select>
+
+            <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}>
+              <option value="">Tous les statuts</option>
+              {statusOptions.map((s) => (
+                <option key={s} value={s}>
+                  {s}
+                </option>
+              ))}
+            </select>
+
+            <select value={filterSession} onChange={(e) => setFilterSession(e.target.value)}>
+              <option value="">Toutes les sessions</option>
+              {sessionOptions.map((ss) => (
+                <option key={ss} value={ss}>
+                  {ss}
+                </option>
+              ))}
+            </select>
+
+            <button
+              className="btn-primary"
+              style={{ background: "#6b7280" }}
+              onClick={() => {
+                setFilterTeacher("");
+                setFilterStatus("");
+                setFilterSession("");
+              }}
+            >
+              Réinitialiser
+            </button>
+          </div>
+
+          {/* List */}
+          <table className="word-table">
+            <thead>
+              <tr>
+                <th>Enseignant</th>
+                <th>Titre du cours</th>
+                <th>Statut</th>
+                <th>Session</th>
+                <th>Coordonnateur</th>
+                <th>Approuvé le</th>
+                <th>Action</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {filteredPlans.map((plan) => (
+                <tr key={plan.id}>
+                  <td>{plan.teacherName}</td>
+                  <td>{plan.answers?.[1764218126528] || "Sans titre"}</td>
+                  <td>{plan.status || "—"}</td>
+                  <td>{plan.session || "—"}</td>
+                  <td>{plan.coordinatorName || (plan.status === "Approuvé" ? "—" : "")}</td>
+                  <td>{plan.approvedAt ? formatTs(plan.approvedAt) : ""}</td>
+                  <td>
+                    <button
+                      onClick={() => loadAiResults(plan)}
+                      style={{ fontSize: 14, padding: "6px 12px" }}
+                    >
+                      Examiner
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </>
       ) : (
         <div>
-          <button onClick={() => setSelectedPlan(null)} className="word-add">
+          <button
+            onClick={() => {
+              setSelectedPlan(null);
+              setIsEditingComment(false);
+            }}
+            className="word-add"
+          >
             ← Retour à la liste
           </button>
 
-          <h3>Examen du plan : {selectedPlan.answers?.[1764218126528]}</h3>
+          <h3>Examen du plan : {selectedPlan.answers?.[1764218126528] || "Sans titre"}</h3>
           <p>
             <strong>Enseignant :</strong> {selectedPlan.teacherName}
           </p>
+          {selectedPlan.status === "Approuvé" && (
+            <p>
+              <strong>Approuvé par :</strong>{" "}
+              {selectedPlan.coordinatorName || "Coordonnateur inconnu"}
+              <br />
+              <strong>Date :</strong>{" "}
+              {selectedPlan.approvedAt ? formatTs(selectedPlan.approvedAt) : "—"}
+            </p>
+          )}
 
+          {/* Submitted content (example) */}
           <div
             style={{
               margin: "20px 0",
-              padding: "15px",
+              padding: 15,
               background: "#f9f9f9",
-              borderRadius: "8px",
+              borderRadius: 8,
             }}
           >
             <h4>Contenu soumis :</h4>
             <p>
-              <strong>Description :</strong> {selectedPlan.answers?.description}
+              <strong>Description :</strong>{" "}
+              {selectedPlan.answers?.description || "—"}
             </p>
+            {selectedPlan.pdfUrl && (
+              <p>
+                <a
+                  href={selectedPlan.pdfUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="btn-link"
+                >
+                  Voir le PDF complet
+                </a>
+              </p>
+            )}
+          </div>
 
-            <p>
-              <a
-                href={selectedPlan.pdfUrl}
-                target="_blank"
-                rel="noreferrer"
-                className="btn-link"
+          {/* AI comments in examiner */}
+          <div style={{ marginTop: 16 }}>
+            <h4 style={{ marginBottom: 8 }}>Commentaires IA</h4>
+
+            {aiLoading && <p>Chargement…</p>}
+            {!aiLoading && aiError && (
+              <p style={{ color: "#b91c1c" }}>Erreur: {aiError}</p>
+            )}
+            {!aiLoading && !aiError && (
+              <>
+                {(() => {
+                  const aiText = getAiCommentText(selectedPlan.aiValidation);
+                  return aiText ? (
+                    <>
+                      <div
+                        style={{
+                          background: "#fff",
+                          border: "1px solid #e5e7eb",
+                          borderRadius: 6,
+                          padding: 12,
+                          whiteSpace: "pre-wrap",
+                        }}
+                      >
+                        {aiText}
+                      </div>
+                      <button
+                        className="btn-primary"
+                        style={{ background: "#6b7280", marginTop: 8 }}
+                        onClick={() => {
+                          setIsEditingComment(true);
+                          setComment(aiText);
+                        }}
+                      >
+                        Copier dans le commentaire
+                      </button>
+                    </>
+                  ) : (
+                    <p>Aucun commentaire IA disponible.</p>
+                  );
+                })()}
+              </>
+            )}
+          </div>
+
+          {/* Coordinator comment: read-only if approved unless editing */}
+          <div className="input-group" style={{ marginTop: 16 }}>
+            <h4>Commentaire du coordonnateur :</h4>
+
+            {selectedPlan.status === "Approuvé" && !isEditingComment ? (
+              <div
+                style={{
+                  background: "#fff",
+                  border: "1px solid #ddd",
+                  borderRadius: 6,
+                  padding: 12,
+                  whiteSpace: "pre-wrap",
+                }}
               >
-                Voir le PDF complet
-              </a>
-            </p>
+                {selectedPlan.coordinatorComment || "—"}
+              </div>
+            ) : (
+              <textarea
+                className="desc-fixed"
+                style={{ minHeight: 100 }}
+                value={comment}
+                onChange={(e) => setComment(e.target.value)}
+                placeholder="Indiquez les corrections ou le message d'approbation…"
+              />
+            )}
+
+            {selectedPlan.status === "Approuvé" && (
+              <div style={{ marginTop: 10 }}>
+                <button
+                  className="btn-primary"
+                  style={{ background: "#374151" }}
+                  onClick={() => {
+                    if (!isEditingComment) setComment(selectedPlan.coordinatorComment || "");
+                    setIsEditingComment((v) => !v);
+                  }}
+                >
+                  {isEditingComment ? "Annuler" : "Modifier"}
+                </button>
+
+                {isEditingComment && (
+                  <button
+                    className="btn-primary"
+                    style={{ background: "#2563eb", marginLeft: 8 }}
+                    onClick={() => handleUpdateStatus("Approuvé")}
+                  >
+                    Enregistrer
+                  </button>
+                )}
+              </div>
+            )}
           </div>
 
-          <div className="input-group">
-            <label>Commentaire du coordonnateur :</label>
-            <textarea
-              className="desc-fixed"
-              style={{ minHeight: "100px" }}
-              value={comment}
-              onChange={(e) => setComment(e.target.value)}
-              placeholder="Indiquez les corrections demandées ou un message d'approbation..."
-            />
-          </div>
-
-          <div style={{ display: "flex", gap: "10px", marginTop: "20px" }}>
+          {/* Actions */}
+          <div style={{ display: "flex", gap: 10, marginTop: 20 }}>
             <button
               className="btn-primary"
-              style={{ background: "#10b981", marginTop: 0 }}
+              style={{ background: "#10b981" }}
               onClick={() => handleUpdateStatus("Approuvé")}
             >
               Approuver
@@ -147,7 +396,7 @@ export default function ValidatePlans() {
 
             <button
               className="btn-primary"
-              style={{ background: "#f59e0b", marginTop: 0 }}
+              style={{ background: "#f59e0b" }}
               onClick={() => handleUpdateStatus("À corriger")}
             >
               Demander correction
