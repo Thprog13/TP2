@@ -42,6 +42,8 @@ export default function TeacherDashboard() {
 
   const [plans, setPlans] = useState([]);
 
+  const [templates, setTemplates] = useState([]);        // Liste des modèles disponibles
+  const [selectedTemplateId, setSelectedTemplateId] = useState(null); // ID sélectionné
   // --- NOUVEAU : État pour le formulaire dynamique ---
   const [formTemplate, setFormTemplate] = useState(null);
   const [answers, setAnswers] = useState({}); // Format: { "id_question": "réponse" }
@@ -56,20 +58,22 @@ export default function TeacherDashboard() {
 
   /* ===== 1. Charger les plans existants ===== */
   useEffect(() => {
-    const loadPlans = async () => {
-      if (!currentUser) return;
-
-      const q = query(
-        collection(db, "coursePlans"),
-        where("teacherId", "==", currentUser.uid)
+    const loadTemplates = async () => {
+      const tq = query(
+        collection(db, "formTemplates"),
+        where("active", "==", true),
+        orderBy("createdAt", "desc")
       );
-
-      const snap = await getDocs(q);
-      setPlans(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+      const snap = await getDocs(tq);
+      const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      setTemplates(list);
+      // Pré-sélection si aucune sélection et pas en édition
+      if (!selectedTemplateId && list.length > 0 && !editingPlan) {
+        setSelectedTemplateId(list[0].id);
+      }
     };
-
-    loadPlans();
-  }, [currentUser, activeTab]);
+    loadTemplates();
+  }, [editingPlan]);
 
   /* ===== 2. Charger le modèle de formulaire ACTIF ou celui du Plan en édition (MODIFIÉ) ===== */
   useEffect(() => {
