@@ -14,7 +14,7 @@ export default function TeacherSettings() {
       await updateProfile(user, { displayName: name });
       await user.reload();
 
-      alert("Nom mis à jour !");
+      alert("Nom mis à jour avec succès!");
       window.location.reload();
     } catch (error) {
       console.error(error);

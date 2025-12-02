@@ -4,6 +4,7 @@ export default function SidebarCoordo({ activeTab, setActiveTab }) {
   const menu = [
     { id: "forms", label: "📝 Gérer formulaires" },
     { id: "validate", label: "✅ Valider plans" },
+    { id: "settings", label: "⚙️ Paramètres" },
   ];
 
   return (
