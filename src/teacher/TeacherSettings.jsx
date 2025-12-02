@@ -13,12 +13,7 @@ export default function TeacherSettings() {
     try {
       await updateProfile(user, { displayName: name });
       await user.reload();
-<<<<<<< HEAD
       alert("Nom mis à jour !");
-=======
-      alert("Nom mis à jour avec succès!");
-      window.location.reload();
->>>>>>> b7898d4b991d3e5400c460425afa7301a7ce3010
     } catch (error) {
       console.error(error);
     }
