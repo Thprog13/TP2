@@ -191,22 +191,46 @@ export default function ManageForms() {
     });
   };
 
+  // --- Sauvegarde avec un seul actif ---
   const saveForm = async () => {
     if (!coursePlan.meta.title.trim()) return alert("Titre requis.");
-    const payload = { ...coursePlan, updatedAt: serverTimestamp() };
+    const payload = {
+      ...coursePlan,
+      updatedAt: serverTimestamp(),
+      active: true,
+    };
+
     try {
+      // Désactiver l'ancien actif
+      const activeSnap = await getDocs(
+        query(collection(db, "formTemplates"), where("active", "==", true))
+      );
+      await Promise.all(
+        activeSnap.docs
+          .map((docSnap) => {
+            if (docSnap.id !== activeFormId) {
+              return updateDoc(doc(db, "formTemplates", docSnap.id), {
+                active: false,
+              });
+            }
+            return null;
+          })
+          .filter(Boolean)
+      );
+
+      // Mise à jour ou création
       if (activeFormId) {
         await updateDoc(doc(db, "formTemplates", activeFormId), payload);
       } else {
         const ref = await addDoc(collection(db, "formTemplates"), {
           ...payload,
           createdAt: serverTimestamp(),
-          active: true,
           creatorId: currentUserId,
           type: "course-plan",
         });
         setActiveFormId(ref.id);
       }
+
       await loadForms();
       alert("Sauvegardé !");
     } catch (e) {
@@ -215,11 +239,38 @@ export default function ManageForms() {
     }
   };
 
+  // --- Fonction pour activer manuellement un modèle ---
+  const toggleActive = async (id) => {
+    try {
+      const activeSnap = await getDocs(
+        query(collection(db, "formTemplates"), where("active", "==", true))
+      );
+      await Promise.all(
+        activeSnap.docs
+          .map((docSnap) => {
+            if (docSnap.id !== id) {
+              return updateDoc(doc(db, "formTemplates", docSnap.id), {
+                active: false,
+              });
+            }
+            return null;
+          })
+          .filter(Boolean)
+      );
+      await updateDoc(doc(db, "formTemplates", id), { active: true });
+      await loadForms();
+    } catch (e) {
+      console.error(e);
+      alert("Erreur lors du changement de statut");
+    }
+  };
+
   if (isLoading) return <div className="p-8 text-white">Chargement...</div>;
   if (!userRole) return <div className="p-8 text-red-400">Accès refusé.</div>;
 
   return (
     <div className="space-y-8 max-w-5xl mx-auto pb-20">
+      {/* Formulaire création/modification */}
       <div className="card-modern">
         <div className="flex justify-between items-center mb-6 border-b border-slate-700 pb-4">
           <h2 className="text-2xl font-bold text-white">
@@ -236,6 +287,7 @@ export default function ManageForms() {
           </button>
         </div>
 
+        {/* Informations générales */}
         <div className="space-y-4 mb-8">
           <h3 className="text-lg font-semibold text-blue-400">
             1. Informations générales
@@ -275,6 +327,7 @@ export default function ManageForms() {
           </div>
         </div>
 
+        {/* Semaines */}
         <div className="space-y-4 mb-8">
           <div className="flex justify-between items-center">
             <h3 className="text-lg font-semibold text-blue-400">
@@ -321,6 +374,7 @@ export default function ManageForms() {
           </div>
         </div>
 
+        {/* Examens */}
         <div className="space-y-4 mb-8">
           <div className="flex justify-between items-center">
             <h3 className="text-lg font-semibold text-blue-400">
@@ -370,6 +424,7 @@ export default function ManageForms() {
           </div>
         </div>
 
+        {/* Règles IA */}
         <div className="bg-slate-900 p-6 rounded-xl border border-slate-700">
           <h3 className="text-lg font-semibold text-purple-400 mb-4">
             🤖 Règles de validation IA
@@ -402,6 +457,7 @@ export default function ManageForms() {
         </button>
       </div>
 
+      {/* Liste des modèles */}
       <div className="card-modern">
         <h3 className="text-xl font-bold text-white mb-4">
           Modèles enregistrés
@@ -425,6 +481,7 @@ export default function ManageForms() {
                   )}
                 </div>
               </div>
+
               <div className="flex gap-3">
                 <button
                   onClick={() => editTemplate(t)}
@@ -432,11 +489,23 @@ export default function ManageForms() {
                 >
                   Modifier
                 </button>
+
                 <button
                   onClick={() => deleteTemplate(t.id)}
                   className="text-red-400 hover:text-red-300 text-sm font-medium"
                 >
                   Supprimer
+                </button>
+
+                <button
+                  onClick={() => toggleActive(t.id)}
+                  className={`text-sm font-medium px-2 py-1 rounded ${
+                    t.active
+                      ? "bg-green-500 text-white"
+                      : "bg-slate-700 text-slate-300"
+                  }`}
+                >
+                  {t.active ? "Actif" : "Activer"}
                 </button>
               </div>
             </div>

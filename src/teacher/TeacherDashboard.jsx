@@ -109,7 +109,11 @@ export default function TeacherDashboard() {
   };
 
   const handleSubmitPlan = async () => {
-    if (!analysis) return alert("Analyse requise");
+    if (!analysis) {
+      alert("Veuillez analyser le plan avec l'IA avant de soumettre.");
+      return;
+    }
+
     setSubmitting(true);
 
     // Création PDF
@@ -143,7 +147,6 @@ export default function TeacherDashboard() {
       answers,
       status: editingPlan?.status === "Approuvé" ? "En révision" : "Soumis",
       pdfUrl,
-      coordinatorComments: editingPlan?.coordinatorComments || [],
     };
 
     if (editingPlan)
@@ -187,9 +190,7 @@ export default function TeacherDashboard() {
                       className={`px-2 py-1 rounded font-bold mb-2 ${
                         p.status === "Approuvé"
                           ? "text-green-400 bg-green-900/20"
-                          : p.status === "Soumis"
-                          ? "text-orange-400 bg-orange-900/20"
-                          : "text-red-400 bg-red-900/20"
+                          : "text-orange-400 bg-orange-900/20"
                       }`}
                     >
                       {p.status}
@@ -252,14 +253,6 @@ export default function TeacherDashboard() {
                           onChange={(e) => handleInputChange(q.id, e.target.value)}
                           placeholder="Votre réponse..."
                         />
-                        {/* Coordinator comments */}
-                        {editingPlan?.coordinatorComments
-                          ?.filter((c) => c.questionId === q.id)
-                          .map((c, idx) => (
-                            <p key={idx} className="text-yellow-400 italic text-sm mt-1">
-                              💬 Commentaire du coordo: {c.comment}
-                            </p>
-                          ))}
                       </div>
                     ))}
                     <div className="flex gap-4 pt-4">
@@ -270,14 +263,23 @@ export default function TeacherDashboard() {
                       >
                         ✨ Analyser
                       </button>
+
+                      {/* Bouton soumettre amélioré */}
                       <button
                         onClick={handleSubmitPlan}
-                        disabled={submitting || !analysis}
-                        className="btn-primary flex-1"
+                        className={`btn-primary flex-1 ${
+                          !analysis ? "opacity-50 cursor-not-allowed" : ""
+                        }`}
+                        title={
+                          !analysis
+                            ? "Vous devez analyser les réponses avec l'IA avant de soumettre"
+                            : ""
+                        }
                       >
                         {submitting ? "Envoi..." : "Soumettre"}
                       </button>
                     </div>
+
                     {analysis && (
                       <div
                         className={`p-4 rounded-xl border mt-4 ${
