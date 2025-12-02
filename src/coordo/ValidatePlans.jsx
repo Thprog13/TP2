@@ -7,6 +7,8 @@ import {
   doc,
   getDoc,
   serverTimestamp,
+  query, // <--- AJOUTÉ
+  orderBy, // <--- AJOUTÉ
 } from "firebase/firestore";
 
 export default function ValidatePlans() {
@@ -49,7 +51,14 @@ export default function ValidatePlans() {
   }, []);
 
   const loadPlans = async () => {
-    const snap = await getDocs(collection(db, "coursePlans"));
+    // ⭐ MODIFICATION : Ajout du tri par date de création descendante (plus récent en haut)
+    const q = query(
+      collection(db, "coursePlans"),
+      orderBy("createdAt", "desc")
+    );
+
+    const snap = await getDocs(q);
+
     const plansData = await Promise.all(
       snap.docs.map(async (d) => {
         const data = d.data();
@@ -57,20 +66,39 @@ export default function ValidatePlans() {
         // Teacher name
         let teacherName = "Inconnu";
         if (data.teacherId) {
-          const userSnap = await getDoc(doc(db, "users", data.teacherId));
-          if (userSnap.exists()) {
-            const u = userSnap.data();
-            teacherName = [u.firstName, u.lastName].filter(Boolean).join(" ");
+          try {
+            const userSnap = await getDoc(doc(db, "users", data.teacherId));
+            if (userSnap.exists()) {
+              const u = userSnap.data();
+              // Gestion des cas où firstName/lastName manqueraient
+              const first = u.firstName || "";
+              const last = u.lastName || "";
+              if (first || last) {
+                teacherName = `${first} ${last}`.trim();
+              } else {
+                teacherName = u.email || "Enseignant";
+              }
+            }
+          } catch (e) {
+            console.error("Erreur fetch user", e);
           }
         }
 
         // Coordinator name
         let coordinatorName = null;
         if (data.coordinatorId) {
-          const coordSnap = await getDoc(doc(db, "users", data.coordinatorId));
-          if (coordSnap.exists()) {
-            const c = coordSnap.data();
-            coordinatorName = [c.firstName, c.lastName].filter(Boolean).join(" ");
+          try {
+            const coordSnap = await getDoc(
+              doc(db, "users", data.coordinatorId)
+            );
+            if (coordSnap.exists()) {
+              const c = coordSnap.data();
+              coordinatorName = [c.firstName, c.lastName]
+                .filter(Boolean)
+                .join(" ");
+            }
+          } catch (e) {
+            console.error("Erreur fetch coordo", e);
           }
         }
 
@@ -106,7 +134,8 @@ export default function ValidatePlans() {
 
   const getAiCommentText = (ai) => {
     if (!ai) return null;
-    if (typeof ai.comment === "string" && ai.comment.trim()) return ai.comment.trim();
+    if (typeof ai.comment === "string" && ai.comment.trim())
+      return ai.comment.trim();
     if (Array.isArray(ai.recommendations) && ai.recommendations.length) {
       return ai.recommendations.join("\n");
     }
@@ -121,7 +150,7 @@ export default function ValidatePlans() {
   const formatTs = (ts) => {
     if (!ts) return "";
     const date = ts.toDate ? ts.toDate() : new Date(ts);
-    return date.toLocaleString();
+    return date.toLocaleString("fr-FR");
   };
 
   const handleUpdateStatus = async (status) => {
@@ -147,7 +176,12 @@ export default function ValidatePlans() {
       loadPlans();
     } catch (e) {
       console.error("Erreur updateDoc:", e);
-      alert("Erreur lors de la mise à jour: " + (e.code || "") + " " + (e.message || ""));
+      alert(
+        "Erreur lors de la mise à jour: " +
+          (e.code || "") +
+          " " +
+          (e.message || "")
+      );
     }
   };
 
@@ -158,8 +192,19 @@ export default function ValidatePlans() {
       {!selectedPlan ? (
         <>
           {/* Filters */}
-          <div style={{ display: "flex", gap: 10, marginBottom: 12, flexWrap: "wrap", alignItems: "center" }}>
-            <select value={filterTeacher} onChange={(e) => setFilterTeacher(e.target.value)}>
+          <div
+            style={{
+              display: "flex",
+              gap: 10,
+              marginBottom: 12,
+              flexWrap: "wrap",
+              alignItems: "center",
+            }}
+          >
+            <select
+              value={filterTeacher}
+              onChange={(e) => setFilterTeacher(e.target.value)}
+            >
               <option value="">Tous les enseignants</option>
               {teacherOptions.map((t) => (
                 <option key={t} value={t}>
@@ -168,7 +213,10 @@ export default function ValidatePlans() {
               ))}
             </select>
 
-            <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}>
+            <select
+              value={filterStatus}
+              onChange={(e) => setFilterStatus(e.target.value)}
+            >
               <option value="">Tous les statuts</option>
               {statusOptions.map((s) => (
                 <option key={s} value={s}>
@@ -177,7 +225,10 @@ export default function ValidatePlans() {
               ))}
             </select>
 
-            <select value={filterSession} onChange={(e) => setFilterSession(e.target.value)}>
+            <select
+              value={filterSession}
+              onChange={(e) => setFilterSession(e.target.value)}
+            >
               <option value="">Toutes les sessions</option>
               {sessionOptions.map((ss) => (
                 <option key={ss} value={ss}>
@@ -205,10 +256,9 @@ export default function ValidatePlans() {
               <tr>
                 <th>Enseignant</th>
                 <th>Titre du cours</th>
+                <th>Soumis le</th>
                 <th>Statut</th>
-                <th>Session</th>
                 <th>Coordonnateur</th>
-                <th>Approuvé le</th>
                 <th>Action</th>
               </tr>
             </thead>
@@ -216,11 +266,37 @@ export default function ValidatePlans() {
               {filteredPlans.map((plan) => (
                 <tr key={plan.id}>
                   <td>{plan.teacherName}</td>
-                  <td>{plan.answers?.[1764218126528] || "Sans titre"}</td>
-                  <td>{plan.status || "—"}</td>
-                  <td>{plan.session || "—"}</td>
-                  <td>{plan.coordinatorName || (plan.status === "Approuvé" ? "—" : "")}</td>
-                  <td>{plan.approvedAt ? formatTs(plan.approvedAt) : ""}</td>
+
+                  {/* ⭐ MODIFICATION : Affiche le vrai titre */}
+                  <td>{plan.title || "Plan sans titre"}</td>
+
+                  {/* Ajout colonne date soumission pour vérifier l'ordre */}
+                  <td style={{ fontSize: "0.85em" }}>
+                    {plan.createdAt ? formatTs(plan.createdAt) : "—"}
+                  </td>
+
+                  <td>
+                    <span
+                      style={{
+                        fontWeight: "bold",
+                        color:
+                          plan.status === "Approuvé"
+                            ? "green"
+                            : plan.status === "Non conforme" ||
+                              plan.status === "À corriger"
+                            ? "red"
+                            : "orange",
+                      }}
+                    >
+                      {plan.status || "—"}
+                    </span>
+                  </td>
+
+                  <td>
+                    {plan.coordinatorName ||
+                      (plan.status === "Approuvé" ? "—" : "")}
+                  </td>
+
                   <td>
                     <button
                       onClick={() => loadAiResults(plan)}
@@ -246,17 +322,26 @@ export default function ValidatePlans() {
             ← Retour à la liste
           </button>
 
-          <h3>Examen du plan : {selectedPlan.answers?.title || "Sans titre"}</h3>
+          {/* ⭐ MODIFICATION : Affiche le vrai titre dans le détail */}
+          <h3>Examen du plan : {selectedPlan.title || "Plan sans titre"}</h3>
+
           <p>
             <strong>Enseignant :</strong> {selectedPlan.teacherName}
           </p>
+          <p>
+            <strong>Soumis le :</strong>{" "}
+            {selectedPlan.createdAt ? formatTs(selectedPlan.createdAt) : "—"}
+          </p>
+
           {selectedPlan.status === "Approuvé" && (
             <p>
               <strong>Approuvé par :</strong>{" "}
               {selectedPlan.coordinatorName || "Coordonnateur inconnu"}
               <br />
-              <strong>Date :</strong>{" "}
-              {selectedPlan.approvedAt ? formatTs(selectedPlan.approvedAt) : "—"}
+              <strong>Date d'approbation :</strong>{" "}
+              {selectedPlan.approvedAt
+                ? formatTs(selectedPlan.approvedAt)
+                : "—"}
             </p>
           )}
 
@@ -270,9 +355,12 @@ export default function ValidatePlans() {
             }}
           >
             <h4>Contenu soumis :</h4>
+            {/* On affiche quelques infos rapides, le reste est dans le PDF */}
             <p>
-              <strong>Description :</strong>{" "}
-              {selectedPlan.answers?.description || "—"}
+              <strong>Nombre de réponses :</strong>{" "}
+              {selectedPlan.answers
+                ? Object.keys(selectedPlan.answers).length
+                : 0}
             </p>
             {selectedPlan.pdfUrl && (
               <p>
@@ -325,7 +413,10 @@ export default function ValidatePlans() {
                       </button>
                     </>
                   ) : (
-                    <p>Aucun commentaire IA disponible.</p>
+                    <p>
+                      Aucun commentaire IA disponible (Le plan n'a peut-être pas
+                      encore été analysé ou l'analyse est ancienne).
+                    </p>
                   );
                 })()}
               </>
@@ -364,7 +455,8 @@ export default function ValidatePlans() {
                   className="btn-primary"
                   style={{ background: "#374151" }}
                   onClick={() => {
-                    if (!isEditingComment) setComment(selectedPlan.coordinatorComment || "");
+                    if (!isEditingComment)
+                      setComment(selectedPlan.coordinatorComment || "");
                     setIsEditingComment((v) => !v);
                   }}
                 >
