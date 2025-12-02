@@ -10,6 +10,7 @@ import {
   query,
   where,
   getDocs,
+  getDoc, // <--- AJOUTÉ POUR RÉCUPÉRER LE NOM DE L'ENSEIGNANT
   serverTimestamp,
   deleteDoc,
   doc,
@@ -23,18 +24,20 @@ import { jsPDF } from "jspdf";
 // ⭐ FONCTION UNIQUE pour formater l'horodatage en date et heure
 const formatDateTime = (timestamp) => {
   if (!timestamp) return "N/A";
-  
+
   // Convertit l'horodatage Firestore en objet Date
-  const date = timestamp.toDate(); 
-  
+  const date = timestamp.toDate();
+
   // Formate la date et l'heure (Ex: 27/11/2025 à 12:16)
-  return date.toLocaleDateString('fr-FR', {
-    year: 'numeric',
-    month: 'numeric',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit'
-  }).replace(',', ' à '); // Remplace la virgule (si présente) par ' à '
+  return date
+    .toLocaleDateString("fr-FR", {
+      year: "numeric",
+      month: "numeric",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    })
+    .replace(",", " à "); // Remplace la virgule (si présente) par ' à '
 };
 
 export default function TeacherDashboard() {
@@ -42,7 +45,7 @@ export default function TeacherDashboard() {
 
   const [plans, setPlans] = useState([]);
 
-  const [templates, setTemplates] = useState([]);        // Liste des modèles disponibles
+  const [templates, setTemplates] = useState([]); // Liste des modèles disponibles
   const [selectedTemplateId, setSelectedTemplateId] = useState(null); // ID sélectionné
   // --- NOUVEAU : État pour le formulaire dynamique ---
   const [formTemplate, setFormTemplate] = useState(null);
@@ -65,7 +68,7 @@ export default function TeacherDashboard() {
         orderBy("createdAt", "desc")
       );
       const snap = await getDocs(tq);
-      const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      const list = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
       setTemplates(list);
       // Pré-sélection si aucune sélection et pas en édition
       if (!selectedTemplateId && list.length > 0 && !editingPlan) {
@@ -136,7 +139,7 @@ export default function TeacherDashboard() {
     // On vérifie chaque question selon sa règle (Simulation locale pour l'instant)
     formTemplate.questions.forEach((q) => {
       const answerText = answers[q.id] || "";
-      // const rule = q.rule || ""; 
+      // const rule = q.rule || "";
 
       // Vérification basique : longueur minimale
       if (answerText.length < 10) {
@@ -165,147 +168,183 @@ export default function TeacherDashboard() {
     if (!analysis) return alert("Analyse IA requise");
     setSubmitting(true);
 
-// --- New PDF generation block ---
-const docPDF = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait" });
+    // =========================================================
+    // 1. PRÉPARATION DES DONNÉES (TITRE & ENSEIGNANT) AVANT PDF
+    // =========================================================
 
-// Values you can customize or pull from your data
-const teacherName = currentUser?.displayName || "Enseignant inconnu";
-const className = formTemplate?.title || formTemplate?.name || "Cours";
+    // A. Récupération du Nom de l'Enseignant (Auth ou Firestore)
+    let teacherName = currentUser?.displayName;
+    if (!teacherName) {
+      // Si le displayName est vide, on va chercher dans la collection 'users'
+      try {
+        const userSnap = await getDoc(doc(db, "users", currentUser.uid));
+        if (userSnap.exists()) {
+          const uData = userSnap.data();
+          teacherName = `${uData.firstName || ""} ${
+            uData.lastName || ""
+          }`.trim();
+        }
+      } catch (e) {
+        console.error("Erreur récupération user", e);
+      }
+    }
+    // Fallback final
+    if (!teacherName) teacherName = currentUser?.email || "Enseignant";
 
-// Page layout config
-const pageWidth = docPDF.internal.pageSize.getWidth();
-const pageHeight = docPDF.internal.pageSize.getHeight();
-const margin = 14;
-let cursorY = 20;
+    // B. Récupération du Titre du cours (Réponse à la question "Titre")
+    const titleQuestion =
+      formTemplate.questions.find((q) =>
+        q.label.toLowerCase().includes("titre")
+      ) || formTemplate.questions[0];
 
-// ===== HEADER =====
+    const finalTitle = answers[titleQuestion.id] || "Plan sans titre";
 
-// Title "PLAN DE COURS"
-docPDF.setFont("helvetica", "bold");
-docPDF.setFontSize(20);
-docPDF.setTextColor(33, 66, 110);
-docPDF.text("PLAN DE COURS", margin, cursorY);
+    // =========================================================
+    // 2. GÉNÉRATION DU PDF
+    // =========================================================
+    const docPDF = new jsPDF({
+      unit: "mm",
+      format: "a4",
+      orientation: "portrait",
+    });
 
-cursorY += 10;
+    // Page layout config
+    const pageWidth = docPDF.internal.pageSize.getWidth();
+    const pageHeight = docPDF.internal.pageSize.getHeight();
+    const margin = 14;
+    let cursorY = 20;
 
-// Teacher + Class section (left)
-docPDF.setFont("helvetica", "normal");
-docPDF.setFontSize(11);
-docPDF.setTextColor(40);
+    // ===== HEADER =====
 
-docPDF.text(`Enseignant: ${teacherName}`, margin, cursorY);
-cursorY += 6;
-docPDF.text(`Formulaire: ${className}`, margin, cursorY);
-
-// Right side: Metadata (date + IA status)
-const generatedDate = new Date().toLocaleDateString("fr-FR");
-const iaStatus = analysis ? analysis.status : "Non évalué";
-docPDF.setFontSize(10);
-docPDF.setTextColor(90);
-
-const metaLines = [
-  `Date de génération: ${generatedDate}`,
-  `Statut IA: ${iaStatus}`
-];
-
-const metaX = pageWidth - margin;
-
-metaLines.forEach((line, i) => {
-  const tw = docPDF.getTextWidth(line);
-  docPDF.text(line, metaX - tw, cursorY - 12 + i * 5);
-});
-
-cursorY += 10;
-
-// Divider line
-docPDF.setDrawColor(200);
-docPDF.setLineWidth(0.5);
-docPDF.line(margin, cursorY, pageWidth - margin, cursorY);
-cursorY += 10;
-
-// ===== CONTENT: Questions / Answers =====
-
-docPDF.setFontSize(12);
-
-if (formTemplate && formTemplate.questions) {
-  formTemplate.questions.forEach((q, idx) => {
-
-    // Heading
+    // Title "PLAN DE COURS"
     docPDF.setFont("helvetica", "bold");
-    docPDF.setFontSize(12);
-    docPDF.setTextColor(30, 97, 196);
-    docPDF.text(`Question ${idx + 1}: ${q.label}`, margin, cursorY);
-    cursorY += 6;
+    docPDF.setFontSize(20);
+    docPDF.setTextColor(33, 66, 110);
+    docPDF.text("PLAN DE COURS", margin, cursorY);
 
-    // Answer box layout
-    const boxX = margin;
-    const boxW = pageWidth - margin * 2;
-    const textX = boxX + 8;
-    const leftAccentW = 3;
-    const innerWidth = boxW - (textX - boxX) - 8;
+    cursorY += 10;
 
+    // Teacher + Class section (left)
     docPDF.setFont("helvetica", "normal");
     docPDF.setFontSize(11);
-    docPDF.setTextColor(30);
+    docPDF.setTextColor(40);
 
-    const answer = answers[q.id] || "";
-    const wrapped = docPDF.splitTextToSize(
-      answer || "(Aucune réponse fournie)",
-      innerWidth
-    );
+    docPDF.text(`Enseignant: ${teacherName}`, margin, cursorY);
+    cursorY += 6;
+    // ✅ CORRECTION : Utilisation du titre récupéré dans les réponses
+    docPDF.text(`Cours: ${finalTitle}`, margin, cursorY);
 
-    const lineHeight = 6;
-    const boxPadding = 8;
-    const boxH = Math.max(20, wrapped.length * lineHeight + boxPadding);
+    // Right side: Metadata (date + IA status)
+    const generatedDate = new Date().toLocaleDateString("fr-FR");
+    const iaStatus = analysis ? analysis.status : "Non évalué";
+    docPDF.setFontSize(10);
+    docPDF.setTextColor(90);
 
-    // Page break if needed
-    if (cursorY + boxH + 30 > pageHeight) {
-      docPDF.addPage();
-      cursorY = 20;
+    const metaLines = [
+      `Date de génération: ${generatedDate}`,
+      `Statut IA: ${iaStatus}`,
+    ];
+
+    const metaX = pageWidth - margin;
+
+    metaLines.forEach((line, i) => {
+      const tw = docPDF.getTextWidth(line);
+      docPDF.text(line, metaX - tw, cursorY - 12 + i * 5);
+    });
+
+    cursorY += 10;
+
+    // Divider line
+    docPDF.setDrawColor(200);
+    docPDF.setLineWidth(0.5);
+    docPDF.line(margin, cursorY, pageWidth - margin, cursorY);
+    cursorY += 10;
+
+    // ===== CONTENT: Questions / Answers =====
+
+    docPDF.setFontSize(12);
+
+    if (formTemplate && formTemplate.questions) {
+      formTemplate.questions.forEach((q, idx) => {
+        // Heading
+        docPDF.setFont("helvetica", "bold");
+        docPDF.setFontSize(12);
+        docPDF.setTextColor(30, 97, 196);
+        docPDF.text(`Question ${idx + 1}: ${q.label}`, margin, cursorY);
+        cursorY += 6;
+
+        // Answer box layout
+        const boxX = margin;
+        const boxW = pageWidth - margin * 2;
+        const textX = boxX + 8;
+        const leftAccentW = 3;
+        const innerWidth = boxW - (textX - boxX) - 8;
+
+        docPDF.setFont("helvetica", "normal");
+        docPDF.setFontSize(11);
+        docPDF.setTextColor(30);
+
+        const answer = answers[q.id] || "";
+        const wrapped = docPDF.splitTextToSize(
+          answer || "(Aucune réponse fournie)",
+          innerWidth
+        );
+
+        const lineHeight = 6;
+        const boxPadding = 8;
+        const boxH = Math.max(20, wrapped.length * lineHeight + boxPadding);
+
+        // Page break if needed
+        if (cursorY + boxH + 30 > pageHeight) {
+          docPDF.addPage();
+          cursorY = 20;
+        }
+
+        // Light gray rounded box
+        docPDF.setFillColor(245, 246, 248);
+        docPDF.roundedRect(boxX, cursorY, boxW, boxH, 2, 2, "F");
+
+        // Blue accent
+        docPDF.setFillColor(30, 97, 196);
+        docPDF.rect(boxX, cursorY, leftAccentW, boxH, "F");
+
+        // Text
+        const textY = cursorY + 7;
+        docPDF.setTextColor(20);
+        docPDF.text(wrapped, textX, textY);
+
+        cursorY += boxH + 10;
+      });
     }
 
-    // Light gray rounded box
-    docPDF.setFillColor(245, 246, 248);
-    docPDF.roundedRect(boxX, cursorY, boxW, boxH, 2, 2, "F");
+    // ===== FOOTER: Date + Page numbers =====
 
-    // Blue accent
-    docPDF.setFillColor(30, 97, 196);
-    docPDF.rect(boxX, cursorY, leftAccentW, boxH, "F");
+    const pageCount = docPDF.internal.getNumberOfPages();
+    for (let i = 1; i <= pageCount; i++) {
+      docPDF.setPage(i);
 
-    // Text
-    const textY = cursorY + 7;
-    docPDF.setTextColor(20);
-    docPDF.text(wrapped, textX, textY);
+      // Footer separator
+      docPDF.setDrawColor(230);
+      docPDF.setLineWidth(0.4);
+      docPDF.line(margin, pageHeight - 18, pageWidth - margin, pageHeight - 18);
 
-    cursorY += boxH + 10;
-  });
-}
+      docPDF.setFontSize(9);
+      docPDF.setTextColor(120);
 
-// ===== FOOTER: Date + Page numbers =====
+      // Left: date
+      docPDF.text(`Généré le ${generatedDate}`, margin, pageHeight - 10);
 
-const pageCount = docPDF.internal.getNumberOfPages();
-for (let i = 1; i <= pageCount; i++) {
-  docPDF.setPage(i);
+      // Right: page number
+      const label = `Page ${i} / ${pageCount}`;
+      const tw = docPDF.getTextWidth(label);
+      docPDF.text(label, pageWidth - margin - tw, pageHeight - 10);
+    }
 
-  // Footer separator
-  docPDF.setDrawColor(230);
-  docPDF.setLineWidth(0.4);
-  docPDF.line(margin, pageHeight - 18, pageWidth - margin, pageHeight - 18);
+    // =========================================================
+    // 3. UPLOAD ET SAUVEGARDE
+    // =========================================================
 
-  docPDF.setFontSize(9);
-  docPDF.setTextColor(120);
-
-  // Left: date
-  docPDF.text(`Généré le ${generatedDate}`, margin, pageHeight - 10);
-
-  // Right: page number
-  const label = `Page ${i} / ${pageCount}`;
-  const tw = docPDF.getTextWidth(label);
-  docPDF.text(label, pageWidth - margin - tw, pageHeight - 10);
-}
-
-const blob = docPDF.output("blob");
-
+    const blob = docPDF.output("blob");
     const filePath = `plans/${currentUser.uid}/plan_${Date.now()}.pdf`;
 
     await uploadBytes(ref(storage, filePath), blob);
@@ -319,23 +358,30 @@ const blob = docPDF.output("blob");
       updatedAt: serverTimestamp(), // Nouvelle date de mise à jour
       formId: formTemplate?.id,
       questionsSnapshot: formTemplate?.questions,
+
+      // ✅ SAUVEGARDE DU TITRE À LA RACINE (Pour l'affichage dans la liste)
+      title: finalTitle,
+
       answers: answers,
-      
-      // LOGIQUE DU STATUT : 
-      status: editingPlan?.status === "Approuvé" 
-                ? "En révision" 
-                : (editingPlan?.status || "Soumis"),
-      
-      // LOGIQUE DE LA DATE D'APPROBATION : 
+
+      // LOGIQUE DU STATUT :
+      status:
+        editingPlan?.status === "Approuvé"
+          ? "En révision"
+          : editingPlan?.status || "Soumis",
+
+      // LOGIQUE DE LA DATE D'APPROBATION :
       // On conserve la date d'approbation existante si elle est présente.
-      approvedAt: editingPlan?.approvedAt || null, 
-      
+      approvedAt: editingPlan?.approvedAt || null,
+
       pdfUrl,
     };
 
     if (editingPlan) {
       // MISE À JOUR (UPDATE)
-      await setDoc(doc(db, "coursePlans", editingPlan.id), planData, { merge: true });
+      await setDoc(doc(db, "coursePlans", editingPlan.id), planData, {
+        merge: true,
+      });
       alert("Plan mis à jour !");
     } else {
       // CRÉATION (ADD)
@@ -408,10 +454,14 @@ const blob = docPDF.output("blob");
               ) : (
                 plans.map((p) => (
                   <div key={p.id} className="submit-item">
-                    
                     {/* ⭐ NOUVEAU : Affichage du nom du cours (titre) */}
-                    <h3>{p.answers?.[1764218126528] || "Plan sans titre"}</h3>
-                    
+                    {/* Utilise le champ 'title' (nouveaux plans) ou fallback sur la première réponse (anciens plans) */}
+                    <h3>
+                      {p.title ||
+                        p.answers?.[Object.keys(p.answers)[0]] ||
+                        "Plan sans titre"}
+                    </h3>
+
                     <p>
                       {/* Date et heure de création */}
                       <strong>Date de création :</strong>{" "}
@@ -419,13 +469,15 @@ const blob = docPDF.output("blob");
                     </p>
 
                     {/* Date et heure de modification (si plus récente) */}
-                    {p.updatedAt && 
-                        (p.createdAt && p.updatedAt.seconds > p.createdAt.seconds) && (
+                    {p.updatedAt &&
+                      p.createdAt &&
+                      p.updatedAt.seconds > p.createdAt.seconds && (
                         <p>
-                            <strong>Dernière modification :</strong> {formatDateTime(p.updatedAt)}
+                          <strong>Dernière modification :</strong>{" "}
+                          {formatDateTime(p.updatedAt)}
                         </p>
-                    )}
-                    
+                      )}
+
                     <p>
                       <strong>Statut :</strong>{" "}
                       <span
@@ -448,7 +500,7 @@ const blob = docPDF.output("blob");
                         )}
                       </span>
                     </p>
-                    
+
                     <div className="action-buttons">
                       <a
                         href={p.pdfUrl}
@@ -459,7 +511,7 @@ const blob = docPDF.output("blob");
                       >
                         Voir PDF
                       </a>
-                      
+
                       {/* L'édition est permise si le plan n'est pas "Approuvé" */}
                       {p.status !== "Approuvé" && (
                         <button
@@ -470,7 +522,7 @@ const blob = docPDF.output("blob");
                           Modifier
                         </button>
                       )}
-                      
+
                       <button
                         className="delete-btn"
                         style={{
@@ -503,7 +555,9 @@ const blob = docPDF.output("blob");
           {/* ================= NEW PLAN (DYNAMIQUE) ================= */}
           {activeTab === "new" && (
             <div className="card">
-              <h2>{editingPlan ? "Modifier le plan" : "Remplir le plan de cours"}</h2>
+              <h2>
+                {editingPlan ? "Modifier le plan" : "Remplir le plan de cours"}
+              </h2>
 
               {!formTemplate ? (
                 <div
