@@ -43,42 +43,49 @@ const useAuthInfo = () => {
   return { ...authInfo, isLoading };
 };
 
+// Génère une clé à partir d'un libellé
+const slugifyKey = (txt) =>
+  (txt || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 40) || `field_${Math.random().toString(36).slice(2, 7)}`;
+
 const defaultCoursePlan = () => ({
-  meta: { title: "", objective: "", description: "" },
-  weeks: [{ id: 1, label: "Semaine 1", learning: "", homework: "" }],
-  exams: [],
-  questions: [
+  templateName: "",
+  // Champs dynamiques définis par le coordonnateur pour “Informations générales”
+  metaFields: [
     {
-      id: "q-title",
+      id: `mf-${Date.now()}-1`,
+      key: "title",
       label: "Titre du cours",
-      field: "meta.title",
-      rule: "Le titre doit être non vide, clair et contenir entre 5 et 80 caractères.",
+      type: "text",
+      required: true,
+      placeholder: "Ex: Programmation Web 2",
     },
     {
-      id: "q-objective",
-      label: "Objectif du cours",
-      field: "meta.objective",
-      rule: "L’objectif doit décrire les compétences visées en 1-3 phrases et inclure au moins 15 mots.",
+      id: `mf-${Date.now()}-2`,
+      key: "objective",
+      label: "Objectif",
+      type: "textarea",
+      required: false,
+      placeholder: "",
     },
     {
-      id: "q-description",
-      label: "Description du cours",
-      field: "meta.description",
-      rule: "La description doit détailler les contenus, inclure les méthodes d’enseignement et faire au moins 100 mots.",
-    },
-    {
-      id: "q-weeks",
-      label: "Planification hebdomadaire",
-      field: "weeks",
-      rule: "Chaque semaine doit spécifier clairement: (1) ce qui sera appris, (2) le travail à réaliser à la maison. Éviter les champs vides.",
-    },
-    {
-      id: "q-exams",
-      label: "Évaluations (examens)",
-      field: "exams",
-      rule: "Lister les évaluations avec un titre, une date (si connue), et la matière couverte. Au moins une évaluation pour un cours crédité.",
+      id: `mf-${Date.now()}-3`,
+      key: "description",
+      label: "Description",
+      type: "textarea",
+      required: false,
+      placeholder: "",
     },
   ],
+  weeks: [{ id: 1, label: "Semaine 1", learning: "", homework: "" }],
+  exams: [],
+  questions: [],
+  aiRules: [], // Règles principales indépendantes
 });
 
 export default function ManageForms() {
@@ -114,12 +121,7 @@ export default function ManageForms() {
     loadForms();
   }, [currentUserId, userRole, isLoading]);
 
-  const updateMeta = (field, value) =>
-    setCoursePlan((prev) => ({
-      ...prev,
-      meta: { ...prev.meta, [field]: value },
-    }));
-
+  // Semaines
   const addWeek = () =>
     setCoursePlan((prev) => ({
       ...prev,
@@ -150,6 +152,7 @@ export default function ManageForms() {
     setCoursePlan({ ...coursePlan, weeks: relabeled });
   };
 
+  // Examens
   const addExam = () =>
     setCoursePlan((prev) => ({
       ...prev,
@@ -171,6 +174,103 @@ export default function ManageForms() {
     setCoursePlan({ ...coursePlan, exams });
   };
 
+  // Questions
+  const addQuestion = () =>
+    setCoursePlan((prev) => ({
+      ...prev,
+      questions: [
+        ...prev.questions,
+        {
+          id: `q-${Date.now()}`,
+          label: "",
+          field: "",
+          rule: "",
+        },
+      ],
+    }));
+
+  const updateQuestion = (index, key, value) => {
+    setCoursePlan((prev) => {
+      const qs = [...prev.questions];
+      qs[index] = { ...qs[index], [key]: value };
+      return { ...prev, questions: qs };
+    });
+  };
+
+  const removeQuestion = (index) => {
+    setCoursePlan((prev) => {
+      const qs = [...prev.questions];
+      qs.splice(index, 1);
+      return { ...prev, questions: qs };
+    });
+  };
+
+  // Règles principales indépendantes
+  const addRule = () =>
+    setCoursePlan((prev) => ({
+      ...prev,
+      aiRules: [...prev.aiRules, { id: `r-${Date.now()}`, text: "" }],
+    }));
+
+  const updateRule = (index, value) =>
+    setCoursePlan((prev) => {
+      const rs = [...prev.aiRules];
+      rs[index] = { ...rs[index], text: value };
+      return { ...prev, aiRules: rs };
+    });
+
+  const removeRule = (index) =>
+    setCoursePlan((prev) => {
+      const rs = [...prev.aiRules];
+      rs.splice(index, 1);
+      return { ...prev, aiRules: rs };
+    });
+
+  // Champs dynamiques - Informations générales
+  const addMetaField = () =>
+    setCoursePlan((prev) => {
+      const id = `mf-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+      return {
+        ...prev,
+        metaFields: [
+          ...prev.metaFields,
+          {
+            id,
+            key: `field_${prev.metaFields.length + 1}`,
+            label: "",
+            type: "text",
+            required: false,
+            placeholder: "",
+          },
+        ],
+      };
+    });
+
+  const updateMetaField = (index, keyName, value) =>
+    setCoursePlan((prev) => {
+      const arr = [...(prev.metaFields || [])];
+      const next = { ...arr[index], [keyName]: value };
+      if (
+        keyName === "label" &&
+        (!arr[index].key || arr[index].key.startsWith("field_"))
+      ) {
+        next.key = slugifyKey(value);
+      }
+      if (keyName === "key") {
+        next.key = slugifyKey(value);
+      }
+      arr[index] = next;
+      return { ...prev, metaFields: arr };
+    });
+
+  const removeMetaField = (index) =>
+    setCoursePlan((prev) => {
+      const arr = [...(prev.metaFields || [])];
+      arr.splice(index, 1);
+      return { ...prev, metaFields: arr };
+    });
+
+  // CRUD templates
   const deleteTemplate = async (id) => {
     if (!window.confirm("Supprimer ce modèle ?")) return;
     await deleteDoc(doc(db, "formTemplates", id));
@@ -181,56 +281,92 @@ export default function ManageForms() {
     }
   };
 
+  const migrateMetaToFields = (metaObj) => {
+    if (!metaObj || typeof metaObj !== "object") return [];
+    const fields = [];
+    const pushField = (key, label, type = "text") =>
+      fields.push({
+        id: `mf-${Date.now()}-${Math.random()}`,
+        key,
+        label,
+        type,
+        required: key === "title",
+        placeholder:
+          key === "title"
+            ? "Ex: Programmation Web 2"
+            : key === "objective"
+            ? ""
+            : key === "description"
+            ? ""
+            : "",
+      });
+
+    if (metaObj.title !== undefined) pushField("title", "Titre du cours", "text");
+    if (metaObj.objective !== undefined)
+      pushField("objective", "Objectif", "textarea");
+    if (metaObj.description !== undefined)
+      pushField("description", "Description", "textarea");
+
+    Object.keys(metaObj)
+      .filter((k) => !["title", "objective", "description"].includes(k))
+      .forEach((k) =>
+        fields.push({
+          id: `mf-${Date.now()}-${Math.random()}`,
+          key: slugifyKey(k),
+          label: k,
+          type: "text",
+          required: false,
+          placeholder: "",
+        })
+      );
+    return fields;
+  };
+
   const editTemplate = (t) => {
     setActiveFormId(t.id);
     setCoursePlan({
-      meta: t.meta || { title: "", objective: "", description: "" },
+      templateName: t.templateName || t.meta?.title || "",
+      metaFields: Array.isArray(t.metaFields)
+        ? t.metaFields
+        : migrateMetaToFields(t.meta),
       weeks: t.weeks || [],
       exams: t.exams || [],
-      questions: t.questions || defaultCoursePlan().questions,
+      questions: t.questions || [],
+      aiRules: t.aiRules || [],
     });
   };
 
-  // --- Sauvegarde avec un seul actif ---
+  // Sauvegarde (plusieurs actifs possibles)
   const saveForm = async () => {
-    if (!coursePlan.meta.title.trim()) return alert("Titre requis.");
+    if (!coursePlan.templateName?.trim())
+      return alert("Nom du modèle requis.");
+    if (!coursePlan.metaFields || coursePlan.metaFields.length === 0)
+      return alert(
+        "Ajoutez au moins un champ dans la section Informations générales."
+      );
+
     const payload = {
-      ...coursePlan,
+      templateName: coursePlan.templateName.trim(),
+      metaFields: coursePlan.metaFields,
+      weeks: coursePlan.weeks,
+      exams: coursePlan.exams,
+      questions: coursePlan.questions,
+      aiRules: coursePlan.aiRules,
       updatedAt: serverTimestamp(),
-      active: true,
     };
 
     try {
-      // Désactiver l'ancien actif
-      const activeSnap = await getDocs(
-        query(collection(db, "formTemplates"), where("active", "==", true))
-      );
-      await Promise.all(
-        activeSnap.docs
-          .map((docSnap) => {
-            if (docSnap.id !== activeFormId) {
-              return updateDoc(doc(db, "formTemplates", docSnap.id), {
-                active: false,
-              });
-            }
-            return null;
-          })
-          .filter(Boolean)
-      );
-
-      // Mise à jour ou création
       if (activeFormId) {
         await updateDoc(doc(db, "formTemplates", activeFormId), payload);
       } else {
-        const ref = await addDoc(collection(db, "formTemplates"), {
+        await addDoc(collection(db, "formTemplates"), {
           ...payload,
+          active: true,
           createdAt: serverTimestamp(),
           creatorId: currentUserId,
           type: "course-plan",
         });
-        setActiveFormId(ref.id);
       }
-
       await loadForms();
       alert("Sauvegardé !");
     } catch (e) {
@@ -239,26 +375,16 @@ export default function ManageForms() {
     }
   };
 
-  // --- Fonction pour activer manuellement un modèle ---
-  const toggleActive = async (id) => {
+  // Activer/Désactiver un modèle (sans affecter les autres)
+  const toggleActive = async (id, currentActive) => {
     try {
-      const activeSnap = await getDocs(
-        query(collection(db, "formTemplates"), where("active", "==", true))
+      await updateDoc(doc(db, "formTemplates", id), {
+        active: !currentActive,
+        updatedAt: serverTimestamp(),
+      });
+      setTemplatesList((prev) =>
+        prev.map((t) => (t.id === id ? { ...t, active: !currentActive } : t))
       );
-      await Promise.all(
-        activeSnap.docs
-          .map((docSnap) => {
-            if (docSnap.id !== id) {
-              return updateDoc(doc(db, "formTemplates", docSnap.id), {
-                active: false,
-              });
-            }
-            return null;
-          })
-          .filter(Boolean)
-      );
-      await updateDoc(doc(db, "formTemplates", id), { active: true });
-      await loadForms();
     } catch (e) {
       console.error(e);
       alert("Erreur lors du changement de statut");
@@ -287,43 +413,133 @@ export default function ManageForms() {
           </button>
         </div>
 
-        {/* Informations générales */}
+        {/* Nom du modèle */}
+        <div className="space-y-2 mb-8">
+          <label className="text-sm text-slate-400 block mb-1">
+            Nom du modèle
+          </label>
+          <input
+            className="input-modern"
+            placeholder="Ex: Plan - Prog Web 2 (Hiver)"
+            value={coursePlan.templateName}
+            onChange={(e) =>
+              setCoursePlan((p) => ({ ...p, templateName: e.target.value }))
+            }
+          />
+        </div>
+
+        {/* Informations générales (champs dynamiques) */}
         <div className="space-y-4 mb-8">
-          <h3 className="text-lg font-semibold text-blue-400">
-            1. Informations générales
-          </h3>
-          <div className="grid gap-4">
-            <div>
-              <label className="text-sm text-slate-400 block mb-1">
-                Titre du cours
-              </label>
-              <input
-                className="input-modern"
-                value={coursePlan.meta.title}
-                onChange={(e) => updateMeta("title", e.target.value)}
-                placeholder="Ex: Programmation Web 2"
-              />
-            </div>
-            <div>
-              <label className="text-sm text-slate-400 block mb-1">
-                Objectif
-              </label>
-              <textarea
-                className="input-modern min-h-[80px]"
-                value={coursePlan.meta.objective}
-                onChange={(e) => updateMeta("objective", e.target.value)}
-              />
-            </div>
-            <div>
-              <label className="text-sm text-slate-400 block mb-1">
-                Description
-              </label>
-              <textarea
-                className="input-modern min-h-[100px]"
-                value={coursePlan.meta.description}
-                onChange={(e) => updateMeta("description", e.target.value)}
-              />
-            </div>
+          <div className="flex justify-between items-center">
+            <h3 className="text-lg font-semibold text-blue-400">
+              1. Informations générales — champs (
+              {coursePlan.metaFields?.length || 0})
+            </h3>
+            <button
+              onClick={addMetaField}
+              className="text-sm text-blue-400 border border-blue-500/30 px-3 py-1 rounded hover:bg-blue-500/10"
+            >
+              + Ajouter un champ
+            </button>
+          </div>
+
+          {(!coursePlan.metaFields || coursePlan.metaFields.length === 0) && (
+            <p className="text-slate-500 text-sm">
+              Aucun champ. Ajoutez des champs comme “Titre du cours”,
+              “Objectif”, “Description”, etc.
+            </p>
+          )}
+
+          <div className="space-y-4">
+            {(coursePlan.metaFields || []).map((f, i) => (
+              <div
+                key={f.id}
+                className="bg-slate-900/50 p-4 rounded-xl border border-slate-700"
+              >
+                <div className="flex justify-between items-start mb-3">
+                  <span className="font-bold text-white">Champ #{i + 1}</span>
+                  <button
+                    onClick={() => removeMetaField(i)}
+                    className="text-red-400 hover:text-red-300 text-xs"
+                  >
+                    Supprimer
+                  </button>
+                </div>
+
+                <div className="grid md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-xs text-slate-400 block mb-1">
+                      Libellé
+                    </label>
+                    <input
+                      className="input-modern text-sm"
+                      placeholder="Ex: Titre du cours"
+                      value={f.label}
+                      onChange={(e) =>
+                        updateMetaField(i, "label", e.target.value)
+                      }
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs text-slate-400 block mb-1">
+                      Clé
+                    </label>
+                    <input
+                      className="input-modern text-sm"
+                      placeholder="Ex: title"
+                      value={f.key}
+                      onChange={(e) =>
+                        updateMetaField(i, "key", e.target.value)
+                      }
+                    />
+                  </div>
+                </div>
+
+                <div className="grid md:grid-cols-3 gap-4 mt-4">
+                  <div>
+                    <label className="text-xs text-slate-400 block mb-1">
+                      Type
+                    </label>
+                    <select
+                      className="input-modern text-sm"
+                      value={f.type}
+                      onChange={(e) =>
+                        updateMetaField(i, "type", e.target.value)
+                      }
+                    >
+                      <option value="text">Texte</option>
+                      <option value="textarea">Zone de texte</option>
+                    </select>
+                  </div>
+                  <div className="md:col-span-2">
+                    <label className="text-xs text-slate-400 block mb-1">
+                      Placeholder
+                    </label>
+                    <input
+                      className="input-modern text-sm"
+                      placeholder="Ex: Indiquez l’objectif principal du cours…"
+                      value={f.placeholder || ""}
+                      onChange={(e) =>
+                        updateMetaField(i, "placeholder", e.target.value)
+                      }
+                    />
+                  </div>
+                </div>
+
+                <div className="mt-3">
+                  <label className="inline-flex items-center gap-2 text-xs text-slate-300">
+                    <input
+                      type="checkbox"
+                      checked={!!f.required}
+                      onChange={(e) =>
+                        updateMetaField(i, "required", e.target.checked)
+                      }
+                    />
+                    Requis
+                  </label>
+                </div>
+              </div>
+            ))}
           </div>
         </div>
 
@@ -424,25 +640,129 @@ export default function ManageForms() {
           </div>
         </div>
 
-        {/* Règles IA */}
-        <div className="bg-slate-900 p-6 rounded-xl border border-slate-700">
-          <h3 className="text-lg font-semibold text-purple-400 mb-4">
-            🤖 Règles de validation IA
-          </h3>
+        {/* Questions dynamiques */}
+        <div className="space-y-4 mb-8">
+          <div className="flex justify-between items-center">
+            <h3 className="text-lg font-semibold text-purple-400">
+              4. Questions du plan ({coursePlan.questions.length})
+            </h3>
+            <button
+              onClick={addQuestion}
+              className="text-sm text-purple-400 border border-purple-500/30 px-3 py-1 rounded hover:bg-purple-500/10"
+            >
+              + Ajouter une question
+            </button>
+          </div>
+          <p className="text-xs text-slate-400">
+            Ajoutez des questions (ex: Comment rejoindre le prof ?) et une
+            règle de validation IA pour chaque question.
+          </p>
           <div className="space-y-4">
             {coursePlan.questions.map((q, i) => (
-              <div key={q.id}>
-                <label className="text-sm font-bold text-white block mb-1">
-                  {q.label}
-                </label>
-                <input
-                  className="input-modern text-sm border-purple-500/30 focus:ring-purple-500"
-                  value={q.rule}
-                  onChange={(e) => {
-                    const n = [...coursePlan.questions];
-                    n[i].rule = e.target.value;
-                    setCoursePlan({ ...coursePlan, questions: n });
-                  }}
+              <div
+                key={q.id}
+                className="bg-slate-900/50 p-4 rounded-xl border border-slate-700"
+              >
+                <div className="flex justify-between items-start mb-3">
+                  <span className="font-bold text-white">Question #{i + 1}</span>
+                  <button
+                    onClick={() => removeQuestion(i)}
+                    className="text-red-400 hover:text-red-300 text-xs"
+                  >
+                    Supprimer
+                  </button>
+                </div>
+                <div className="grid md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-xs text-slate-400 block mb-1">
+                      Intitulé
+                    </label>
+                    <input
+                      className="input-modern text-sm"
+                      placeholder="Ex: Comment rejoindre le prof ?"
+                      value={q.label}
+                      onChange={(e) =>
+                        updateQuestion(i, "label", e.target.value)
+                      }
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs text-slate-400 block mb-1">
+                      Champ lié (optionnel)
+                    </label>
+                    <input
+                      className="input-modern text-sm"
+                      placeholder="Ex: meta.title / weeks / null"
+                      value={q.field || ""}
+                      onChange={(e) =>
+                        updateQuestion(i, "field", e.target.value)
+                      }
+                    />
+                  </div>
+                </div>
+                <div className="mt-4">
+                  <label className="text-xs text-slate-400 block mb-1">
+                    Règle de validation IA
+                  </label>
+                  <textarea
+                    className="input-modern min-h-[70px] text-sm"
+                    placeholder="Ex: Doit contenir email + heures de disponibilité. ≥ 20 mots."
+                    value={q.rule}
+                    onChange={(e) => updateQuestion(i, "rule", e.target.value)}
+                  />
+                </div>
+              </div>
+            ))}
+            {coursePlan.questions.length === 0 && (
+              <div className="text-slate-500 text-sm">
+                Aucune question. Ajoutez-en.
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Règles principales (indépendantes) */}
+        <div className="space-y-4 mb-8">
+          <div className="flex justify-between items-center">
+            <h3 className="text-lg font-semibold text-purple-400">
+              5. Règles principales (indépendantes) ({coursePlan.aiRules.length})
+            </h3>
+            <button
+              onClick={addRule}
+              className="text-sm text-purple-400 border border-purple-500/30 px-3 py-1 rounded hover:bg-purple-500/10"
+            >
+              + Ajouter une règle
+            </button>
+          </div>
+
+          {coursePlan.aiRules.length === 0 && (
+            <p className="text-slate-500 text-sm">
+              Aucune règle principale. Exemple: “Chaque semaine précise
+              apprentissage et devoirs”, “Au moins une évaluation”, “Titre
+              5–80 caractères”.
+            </p>
+          )}
+
+          <div className="space-y-3">
+            {coursePlan.aiRules.map((r, i) => (
+              <div
+                key={r.id}
+                className="bg-slate-900 p-4 rounded-xl border border-slate-700"
+              >
+                <div className="flex justify-between items-start mb-2">
+                  <span className="font-bold text-white">Règle #{i + 1}</span>
+                  <button
+                    onClick={() => removeRule(i)}
+                    className="text-red-400 hover:text-red-300 text-xs"
+                  >
+                    Supprimer
+                  </button>
+                </div>
+                <textarea
+                  className="input-modern min-h-[70px] text-sm"
+                  placeholder="Décrivez la règle IA globale."
+                  value={r.text}
+                  onChange={(e) => updateRule(i, e.target.value)}
                 />
               </div>
             ))}
@@ -469,7 +789,9 @@ export default function ManageForms() {
               className="flex justify-between items-center bg-slate-900 p-4 rounded-lg border border-slate-700 hover:border-blue-500/50 transition-colors"
             >
               <div>
-                <div className="text-sm font-mono text-slate-400">{t.id}</div>
+                <div className="text-sm font-semibold text-white">
+                  {t.templateName || t.meta?.title || "Sans titre"}
+                </div>
                 <div className="text-xs text-slate-500 mt-1">
                   {t.createdAt?.toDate
                     ? t.createdAt.toDate().toLocaleDateString()
@@ -481,7 +803,6 @@ export default function ManageForms() {
                   )}
                 </div>
               </div>
-
               <div className="flex gap-3">
                 <button
                   onClick={() => editTemplate(t)}
@@ -489,23 +810,21 @@ export default function ManageForms() {
                 >
                   Modifier
                 </button>
-
                 <button
                   onClick={() => deleteTemplate(t.id)}
                   className="text-red-400 hover:text-red-300 text-sm font-medium"
                 >
                   Supprimer
                 </button>
-
                 <button
-                  onClick={() => toggleActive(t.id)}
+                  onClick={() => toggleActive(t.id, t.active)}
                   className={`text-sm font-medium px-2 py-1 rounded ${
                     t.active
-                      ? "bg-green-500 text-white"
-                      : "bg-slate-700 text-slate-300"
+                      ? "bg-slate-700 text-slate-200"
+                      : "bg-green-500 text-white"
                   }`}
                 >
-                  {t.active ? "Actif" : "Activer"}
+                  {t.active ? "Désactiver" : "Activer"}
                 </button>
               </div>
             </div>
