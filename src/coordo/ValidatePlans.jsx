@@ -246,7 +246,7 @@ export default function ValidatePlans() {
             ← Retour à la liste
           </button>
 
-          <h3>Examen du plan : {selectedPlan.answers?.[1764218126528] || "Sans titre"}</h3>
+          <h3>Examen du plan : {selectedPlan.answers?.title || "Sans titre"}</h3>
           <p>
             <strong>Enseignant :</strong> {selectedPlan.teacherName}
           </p>

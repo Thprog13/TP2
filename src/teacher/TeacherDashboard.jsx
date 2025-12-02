@@ -165,34 +165,147 @@ export default function TeacherDashboard() {
     if (!analysis) return alert("Analyse IA requise");
     setSubmitting(true);
 
-    // --- 1. Génération PDF Dynamique ---
-    const docPDF = new jsPDF();
-    docPDF.setFontSize(18);
-    docPDF.text("Plan de cours", 10, 10);
+// --- New PDF generation block ---
+const docPDF = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait" });
+
+// Values you can customize or pull from your data
+const teacherName = currentUser?.displayName || "Enseignant inconnu";
+const className = formTemplate?.title || formTemplate?.name || "Cours";
+
+// Page layout config
+const pageWidth = docPDF.internal.pageSize.getWidth();
+const pageHeight = docPDF.internal.pageSize.getHeight();
+const margin = 14;
+let cursorY = 20;
+
+// ===== HEADER =====
+
+// Title "PLAN DE COURS"
+docPDF.setFont("helvetica", "bold");
+docPDF.setFontSize(20);
+docPDF.setTextColor(33, 66, 110);
+docPDF.text("PLAN DE COURS", margin, cursorY);
+
+cursorY += 10;
+
+// Teacher + Class section (left)
+docPDF.setFont("helvetica", "normal");
+docPDF.setFontSize(11);
+docPDF.setTextColor(40);
+
+docPDF.text(`Enseignant: ${teacherName}`, margin, cursorY);
+cursorY += 6;
+docPDF.text(`Formulaire: ${className}`, margin, cursorY);
+
+// Right side: Metadata (date + IA status)
+const generatedDate = new Date().toLocaleDateString("fr-FR");
+const iaStatus = analysis ? analysis.status : "Non évalué";
+docPDF.setFontSize(10);
+docPDF.setTextColor(90);
+
+const metaLines = [
+  `Date de génération: ${generatedDate}`,
+  `Statut IA: ${iaStatus}`
+];
+
+const metaX = pageWidth - margin;
+
+metaLines.forEach((line, i) => {
+  const tw = docPDF.getTextWidth(line);
+  docPDF.text(line, metaX - tw, cursorY - 12 + i * 5);
+});
+
+cursorY += 10;
+
+// Divider line
+docPDF.setDrawColor(200);
+docPDF.setLineWidth(0.5);
+docPDF.line(margin, cursorY, pageWidth - margin, cursorY);
+cursorY += 10;
+
+// ===== CONTENT: Questions / Answers =====
+
+docPDF.setFontSize(12);
+
+if (formTemplate && formTemplate.questions) {
+  formTemplate.questions.forEach((q, idx) => {
+
+    // Heading
+    docPDF.setFont("helvetica", "bold");
     docPDF.setFontSize(12);
+    docPDF.setTextColor(30, 97, 196);
+    docPDF.text(`Question ${idx + 1}: ${q.label}`, margin, cursorY);
+    cursorY += 6;
 
-    let y = 20;
-    if (formTemplate && formTemplate.questions) {
-      formTemplate.questions.forEach((q) => {
-        docPDF.setFont("helvetica", "bold");
-        docPDF.text(`Q: ${q.label}`, 10, y);
-        y += 7;
+    // Answer box layout
+    const boxX = margin;
+    const boxW = pageWidth - margin * 2;
+    const textX = boxX + 8;
+    const leftAccentW = 3;
+    const innerWidth = boxW - (textX - boxX) - 8;
 
-        docPDF.setFont("helvetica", "normal");
-        const reponse = answers[q.id] || "";
-        const splitText = docPDF.splitTextToSize(reponse, 180);
-        docPDF.text(splitText, 10, y);
-        y += splitText.length * 7 + 10;
+    docPDF.setFont("helvetica", "normal");
+    docPDF.setFontSize(11);
+    docPDF.setTextColor(30);
 
-        if (y > 270) {
-          docPDF.addPage();
-          y = 10;
-        }
-      });
+    const answer = answers[q.id] || "";
+    const wrapped = docPDF.splitTextToSize(
+      answer || "(Aucune réponse fournie)",
+      innerWidth
+    );
+
+    const lineHeight = 6;
+    const boxPadding = 8;
+    const boxH = Math.max(20, wrapped.length * lineHeight + boxPadding);
+
+    // Page break if needed
+    if (cursorY + boxH + 30 > pageHeight) {
+      docPDF.addPage();
+      cursorY = 20;
     }
 
-    // --- 2. Upload PDF ---
-    const blob = docPDF.output("blob");
+    // Light gray rounded box
+    docPDF.setFillColor(245, 246, 248);
+    docPDF.roundedRect(boxX, cursorY, boxW, boxH, 2, 2, "F");
+
+    // Blue accent
+    docPDF.setFillColor(30, 97, 196);
+    docPDF.rect(boxX, cursorY, leftAccentW, boxH, "F");
+
+    // Text
+    const textY = cursorY + 7;
+    docPDF.setTextColor(20);
+    docPDF.text(wrapped, textX, textY);
+
+    cursorY += boxH + 10;
+  });
+}
+
+// ===== FOOTER: Date + Page numbers =====
+
+const pageCount = docPDF.internal.getNumberOfPages();
+for (let i = 1; i <= pageCount; i++) {
+  docPDF.setPage(i);
+
+  // Footer separator
+  docPDF.setDrawColor(230);
+  docPDF.setLineWidth(0.4);
+  docPDF.line(margin, pageHeight - 18, pageWidth - margin, pageHeight - 18);
+
+  docPDF.setFontSize(9);
+  docPDF.setTextColor(120);
+
+  // Left: date
+  docPDF.text(`Généré le ${generatedDate}`, margin, pageHeight - 10);
+
+  // Right: page number
+  const label = `Page ${i} / ${pageCount}`;
+  const tw = docPDF.getTextWidth(label);
+  docPDF.text(label, pageWidth - margin - tw, pageHeight - 10);
+}
+
+const blob = docPDF.output("blob");
+
     const filePath = `plans/${currentUser.uid}/plan_${Date.now()}.pdf`;
 
     await uploadBytes(ref(storage, filePath), blob);
