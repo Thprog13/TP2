@@ -38,7 +38,7 @@ export default function ValidatePlans() {
                 ? `${u.firstName} ${u.lastName}`
                 : u.email;
             }
-          } catch (e) {}
+          } catch (e) { console.error("erreur récupération plan", e); }
         }
         return { id: d.id, ...data, teacherName };
       })
@@ -47,7 +47,10 @@ export default function ValidatePlans() {
   };
 
   useEffect(() => {
-    loadPlans();
+    const run = async () => {
+      await loadPlans();
+    };
+  run();
   }, []);
 
   const teacherOptions = Array.from(
@@ -62,6 +65,13 @@ export default function ValidatePlans() {
       (!filterStatus || p.status === filterStatus)
   );
 
+  // Compteurs par statut (basés sur les plans filtrés). Normaliser les statuts
+  // (trim + lowercase) pour éviter les problèmes de casse / espaces / accents.
+  const normalize = (s) => (s || "").toString().trim().toLowerCase();
+  const countSubmitted = filteredPlans.filter((p) => normalize(p.status) === "soumis").length;
+  const countToCorrect = filteredPlans.filter((p) => normalize(p.status) === "à corriger").length;
+  const countApproved = filteredPlans.filter((p) => normalize(p.status) === "approuvé").length;
+
   const loadAiResults = async (plan) => {
     setAiLoading(true);
     try {
@@ -74,6 +84,7 @@ export default function ValidatePlans() {
       setSelectedPlan({ ...plan, aiValidation: aiData });
       setComment(plan.coordinatorComment || "");
     } catch (e) {
+      console.error("erreur récupération AI", e);
       setSelectedPlan(plan);
     }
     setAiLoading(false);
@@ -182,6 +193,23 @@ export default function ValidatePlans() {
                 ))}
               </tbody>
             </table>
+          </div>
+          
+          <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="p-4 rounded-lg bg-slate-900/50 border border-slate-700 text-center">
+              <div className="text-xs text-slate-400">Soumis</div>
+              <div className="text-2xl font-bold text-yellow-300">{countSubmitted}</div>
+            </div>
+
+            <div className="p-4 rounded-lg bg-slate-900/50 border border-slate-700 text-center">
+              <div className="text-xs text-slate-400">À corriger</div>
+              <div className="text-2xl font-bold text-orange-300">{countToCorrect}</div>
+            </div>
+
+            <div className="p-4 rounded-lg bg-slate-900/50 border border-slate-700 text-center">
+              <div className="text-xs text-slate-400">Approuvé</div>
+              <div className="text-2xl font-bold text-green-300">{countApproved}</div>
+            </div>
           </div>
         </div>
       ) : (

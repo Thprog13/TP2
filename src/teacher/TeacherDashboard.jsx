@@ -1,10 +1,11 @@
 // src/teacher/TeacherDashboard.jsx
+import React, { useEffect, useState } from "react";
 import SidebarTeacher from "./SidebarTeacher";
 import TeacherSettings from "./TeacherSettings";
 import TeacherSubmits from "./TeacherSubmits";
 import Navbar from "../components/Navbar";
 import "./TeacherDashboard.css";
-import React, { useEffect, useState } from "react";
+
 import { auth, db, storage } from "../firebase";
 import {
   collection,
@@ -60,7 +61,8 @@ const migrateLegacyMetaToValues = (legacyMeta = {}, metaFields = []) => {
     if (legacyMeta[f.key] !== undefined) out[f.key] = legacyMeta[f.key];
   });
   // garder ce qu'on peut
-  if (out.title === undefined && legacyMeta.title !== undefined) out.title = legacyMeta.title;
+  if (out.title === undefined && legacyMeta.title !== undefined)
+    out.title = legacyMeta.title;
   if (out.objective === undefined && legacyMeta.objective !== undefined)
     out.objective = legacyMeta.objective;
   if (out.description === undefined && legacyMeta.description !== undefined)
@@ -69,7 +71,7 @@ const migrateLegacyMetaToValues = (legacyMeta = {}, metaFields = []) => {
 };
 
 export default function TeacherDashboard() {
-  const [activeTab, setActiveTab] = useState("new");
+  const [activeTab, setActiveTab] = useState("plans");
   const [plans, setPlans] = useState([]);
   const [formTemplate, setFormTemplate] = useState(null);
 
@@ -90,6 +92,10 @@ export default function TeacherDashboard() {
   const [planWeeks, setPlanWeeks] = useState([]);
   const [planExams, setPlanExams] = useState([]);
 
+  // Modal de confirmation de modification
+  const [showConfirmEdit, setShowConfirmEdit] = useState(false);
+  const [planToEdit, setPlanToEdit] = useState(null);
+
   // Charger les plans du prof (avec fallback sans composite index)
   useEffect(() => {
     if (!(activeTab === "plans" && currentUser)) return;
@@ -103,13 +109,20 @@ export default function TeacherDashboard() {
         );
         const snap = await getDocs(q1);
         setPlans(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
-      } catch (e) {
-        const q2 = query(collection(db, "coursePlans"), where("teacherId", "==", currentUser.uid));
+      } catch (e) {"erreur récupération plans", e} {
+        const q2 = query(
+          collection(db, "coursePlans"),
+          where("teacherId", "==", currentUser.uid)
+        );
         const snap = await getDocs(q2);
         const rows = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
         rows.sort((a, b) => {
-          const ta = a.createdAt?.toDate ? a.createdAt.toDate().getTime() : 0;
-          const tb = b.createdAt?.toDate ? b.createdAt.toDate().getTime() : 0;
+          const ta = a.createdAt?.toDate
+            ? a.createdAt.toDate().getTime()
+            : 0;
+          const tb = b.createdAt?.toDate
+            ? b.createdAt.toDate().getTime()
+            : 0;
           return tb - ta;
         });
         setPlans(rows);
@@ -122,7 +135,10 @@ export default function TeacherDashboard() {
   // Charger modèles actifs (coordonnateur)
   useEffect(() => {
     const loadTemplates = async () => {
-      const qActifs = query(collection(db, "formTemplates"), where("active", "==", true));
+      const qActifs = query(
+        collection(db, "formTemplates"),
+        where("active", "==", true)
+      );
       const snap = await getDocs(qActifs);
       const list = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
       list.sort((a, b) => {
@@ -152,7 +168,10 @@ export default function TeacherDashboard() {
         // Meta values (préférer metaValuesSnapshot, sinon migrer)
         const vals =
           editingPlan.metaValuesSnapshot ||
-          migrateLegacyMetaToValues(editingPlan.metaSnapshot || {}, tmplData.metaFields || []);
+          migrateLegacyMetaToValues(
+            editingPlan.metaSnapshot || {},
+            tmplData.metaFields || []
+          );
         // Initialiser champs manquants à ""
         const initialMeta = {};
         (tmplData.metaFields || []).forEach((f) => {
@@ -193,7 +212,11 @@ export default function TeacherDashboard() {
       (tmpl.metaFields || []).forEach((f) => (initMeta[f.key] = ""));
       setMetaValues(initMeta);
 
-      setPlanWeeks(tmpl.weeks?.length ? tmpl.weeks : [{ id: 1, label: "Semaine 1", learning: "", homework: "" }]);
+      setPlanWeeks(
+        tmpl.weeks?.length
+          ? tmpl.weeks
+          : [{ id: 1, label: "Semaine 1", learning: "", homework: "" }]
+      );
       setPlanExams(tmpl.exams || []);
       const initAns = {};
       (tmpl.questions || []).forEach((q) => (initAns[q.id] = ""));
@@ -229,6 +252,7 @@ export default function TeacherDashboard() {
         homework: "",
       },
     ]);
+
   const updateWeek = (index, field, value) => {
     setPlanWeeks((prev) => {
       const copy = [...prev];
@@ -236,11 +260,16 @@ export default function TeacherDashboard() {
       return copy;
     });
   };
+
   const removeWeek = (index) => {
     setPlanWeeks((prev) => {
       const copy = [...prev];
       copy.splice(index, 1);
-      return copy.map((w, i) => ({ ...w, id: i + 1, label: `Semaine ${i + 1}` }));
+      return copy.map((w, i) => ({
+        ...w,
+        id: i + 1,
+        label: `Semaine ${i + 1}`,
+      }));
     });
   };
 
@@ -248,8 +277,14 @@ export default function TeacherDashboard() {
   const addExam = () =>
     setPlanExams((prev) => [
       ...prev,
-      { id: (prev[prev.length - 1]?.id || 0) + 1, title: "", date: "", coverage: "" },
+      {
+        id: (prev[prev.length - 1]?.id || 0) + 1,
+        title: "",
+        date: "",
+        coverage: "",
+      },
     ]);
+
   const updateExam = (index, field, value) => {
     setPlanExams((prev) => {
       const copy = [...prev];
@@ -257,6 +292,7 @@ export default function TeacherDashboard() {
       return copy;
     });
   };
+
   const removeExam = (index) => {
     setPlanExams((prev) => {
       const copy = [...prev];
@@ -285,7 +321,10 @@ export default function TeacherDashboard() {
     });
 
     // Exemples de règles simples
-    const titleVal = getTitleFromMeta(formTemplate?.metaFields, metaValues);
+    const titleVal = getTitleFromMeta(
+      formTemplate?.metaFields,
+      metaValues
+    );
     if (!titleVal || titleVal.length < 3) {
       ok = false;
       suggestions.push("Le titre est trop court.");
@@ -296,7 +335,9 @@ export default function TeacherDashboard() {
       const v = (answers[q.id] || "").trim();
       if (v.length < 10) {
         ok = false;
-        suggestions.push(`Réponse trop courte: ${q.label || "Question"}`);
+        suggestions.push(
+          `Réponse trop courte: ${q.label || "Question"}`
+        );
       }
     });
 
@@ -322,7 +363,9 @@ export default function TeacherDashboard() {
     const docPDF = new jsPDF();
     let y = 10;
 
-    const titleVal = getTitleFromMeta(formTemplate?.metaFields, metaValues) || "Plan de cours";
+    const titleVal =
+      getTitleFromMeta(formTemplate?.metaFields, metaValues) ||
+      "Plan de cours";
     docPDF.setFontSize(18);
     docPDF.text(titleVal, 10, y);
     y += 10;
@@ -355,8 +398,14 @@ export default function TeacherDashboard() {
       docPDF.text(`${w.label}`, 10, y);
       y += 6;
       docPDF.setFont("helvetica", "normal");
-      const learn = docPDF.splitTextToSize(`Apprentissage: ${w.learning || ""}`, 180);
-      const hw = docPDF.splitTextToSize(`Devoirs: ${w.homework || ""}`, 180);
+      const learn = docPDF.splitTextToSize(
+        `Apprentissage: ${w.learning || ""}`,
+        180
+      );
+      const hw = docPDF.splitTextToSize(
+        `Devoirs: ${w.homework || ""}`,
+        180
+      );
       docPDF.text(learn, 10, y);
       y += learn.length * 6;
       docPDF.text(hw, 10, y);
@@ -373,7 +422,9 @@ export default function TeacherDashboard() {
     y += 6;
     planExams.forEach((ex, idx) => {
       const lines = docPDF.splitTextToSize(
-        `#${idx + 1} ${ex.title || ""} • Date: ${ex.date || "N/D"} • Matière: ${ex.coverage || ""}`,
+        `#${idx + 1} ${ex.title || ""} • Date: ${
+          ex.date || "N/D"
+        } • Matière: ${ex.coverage || ""}`,
         180
       );
       docPDF.text(lines, 10, y);
@@ -405,11 +456,15 @@ export default function TeacherDashboard() {
 
     // Upload PDF
     const blob = docPDF.output("blob");
-    const refStor = ref(storage, `plans/${currentUser.uid}/${Date.now()}.pdf`);
+    const refStor = ref(
+      storage,
+      `plans/${currentUser.uid}/${Date.now()}.pdf`
+    );
     await uploadBytes(refStor, blob);
     const pdfUrl = await getDownloadURL(refStor);
 
     const finalTitle = titleVal || "Sans titre";
+    const newStatus = editingPlan ? "En révision" : "Soumis";
 
     const data = {
       teacherId: currentUser.uid,
@@ -424,12 +479,14 @@ export default function TeacherDashboard() {
       aiRulesSnapshot: formTemplate?.aiRules || [],
       title: finalTitle,
       answers,
-      status: editingPlan?.status === "Approuvé" ? "En révision" : "Soumis",
+      status: newStatus,
       pdfUrl,
     };
 
     if (editingPlan) {
-      await setDoc(doc(db, "coursePlans", editingPlan.id), data, { merge: true });
+      await setDoc(doc(db, "coursePlans", editingPlan.id), data, {
+        merge: true,
+      });
     } else {
       await addDoc(collection(db, "coursePlans"), data);
     }
@@ -455,33 +512,84 @@ export default function TeacherDashboard() {
     "Sans titre";
 
   return (
-    <div className="flex h-screen bg-dark-bg text-dark-text overflow-hidden">
+    <div className="flex h-screen bg-dark-bg text-dark-text overflow-hidden relative">
       <div className="flex-1 flex flex-col">
         <Navbar />
         <div className="flex flex-1 overflow-hidden">
           <SidebarTeacher activeTab={activeTab} setActiveTab={setActiveTab} />
           <main className="flex-1 overflow-y-auto p-8">
+            {/* MES PLANS */}
             {activeTab === "plans" && (
               <div className="card-modern">
-                <h2 className="text-2xl font-bold text-white mb-4">Mes plans</h2>
+                <h2 className="text-2xl font-bold text-white mb-4">
+                  Mes plans
+                </h2>
                 {plans.length === 0 ? (
                   <p className="text-slate-400">Aucun plan.</p>
                 ) : (
-                  <ul className="list-disc pl-5">
+                  <div className="space-y-4">
                     {plans.map((p) => (
-                      <li key={p.id} className="text-slate-200">
-                        {titleForPlanList(p)} — {p.status || "N/A"} — Créé: {formatDateTime(p.createdAt)}
-                      </li>
+                      <div
+                        key={p.id}
+                        className="p-4 rounded-lg border border-dark-border bg-dark-bg/50"
+                      >
+                        <div className="flex items-center justify-between mb-3">
+                          <div className="flex-1">
+                            <h3 className="text-lg font-semibold text-white mb-1">
+                              {titleForPlanList(p)}
+                            </h3>
+                            <div className="flex items-center gap-3 text-sm text-slate-400">
+                              <span
+                                className={`px-2 py-1 rounded font-semibold ${
+                                  p.status === "Approuvé"
+                                    ? "bg-green-900/30 text-green-300"
+                                    : p.status === "En révision"
+                                    ? "bg-yellow-900/30 text-yellow-300"
+                                    : "bg-blue-900/30 text-blue-300"
+                                }`}
+                              >
+                                {p.status || "N/A"}
+                              </span>
+                              <span>Créé: {formatDateTime(p.createdAt)}</span>
+                            </div>
+                          </div>
+                          {p.status !== "Approuvé" && (
+                            <button
+                              className="px-3 py-1 text-sm rounded bg-blue-600 hover:bg-blue-500 ml-4"
+                              onClick={() => {
+                                setPlanToEdit(p);
+                                setShowConfirmEdit(true);
+                              }}
+                            >
+                              Modifier
+                            </button>
+                          )}
+                        </div>
+                        
+                        {p.coordinatorComment && p.status !== "Approuvé" && (
+                          <div className="mt-3 p-3 bg-slate-900/50 rounded border border-slate-700">
+                            <p className="text-xs text-slate-400 font-semibold mb-1">
+                              Commentaire du coordonnateur:
+                            </p>
+                            <p className="text-slate-300 text-sm">
+                              {p.coordinatorComment}
+                            </p>
+                          </div>
+                        )}
+                      </div>
                     ))}
-                  </ul>
+                  </div>
                 )}
               </div>
             )}
 
+            {/* NOUVEAU / MODIFIER PLAN */}
             {activeTab === "new" && (
               <div className="max-w-4xl mx-auto card-modern">
                 <h2 className="text-2xl font-bold text-white mb-6 border-b border-dark-border pb-4">
-                  {editingPlan ? "Modifier mon plan de cours" : "Nouveau plan de cours"}
+                  {editingPlan
+                    ? "Modifier mon plan de cours"
+                    : "Nouveau plan de cours"}
                 </h2>
 
                 {/* Sélecteur de modèle actif */}
@@ -492,7 +600,8 @@ export default function TeacherDashboard() {
                     </label>
                     {templates.length === 0 ? (
                       <div className="text-sm text-red-300 bg-red-900/20 rounded p-3">
-                        Aucun modèle actif trouvé. Demandez au coordonnateur d’en créer/activer un.
+                        Aucun modèle actif trouvé. Demandez au coordonnateur
+                        d’en créer/activer un.
                       </div>
                     ) : (
                       <select
@@ -500,10 +609,15 @@ export default function TeacherDashboard() {
                         onChange={handleSelectTemplate}
                         className="input-modern"
                       >
-                        <option value="">— Sélectionner un modèle —</option>
+                        <option value="">
+                          — Sélectionner un modèle —
+                        </option>
                         {templates.map((t) => (
                           <option key={t.id} value={t.id}>
-                            {t.templateName || t.meta?.title || "Sans titre"} • {(t.questions || []).length} questions
+                            {t.templateName ||
+                              t.meta?.title ||
+                              "Sans titre"}{" "}
+                            • {(t.questions || []).length} questions
                           </option>
                         ))}
                       </select>
@@ -512,33 +626,49 @@ export default function TeacherDashboard() {
                 )}
 
                 {!formTemplate ? (
-                  <p className="text-slate-400">Sélectionnez un modèle pour commencer.</p>
+                  <p className="text-slate-400">
+                    Sélectionnez un modèle pour commencer.
+                  </p>
                 ) : (
-                  <form onSubmit={(e) => e.preventDefault()} className="space-y-6">
+                  <form
+                    onSubmit={(e) => e.preventDefault()}
+                    className="space-y-6"
+                  >
                     {/* 1. Informations générales (dynamiques) */}
                     <div className="space-y-3">
-                      <h3 className="font-semibold text-white">1. Informations générales</h3>
+                      <h3 className="font-semibold text-white">
+                        1. Informations générales
+                      </h3>
                       {(formTemplate.metaFields || []).length === 0 && (
-                        <p className="text-slate-400 text-sm">Aucun champ défini par le coordonnateur.</p>
+                        <p className="text-slate-400 text-sm">
+                          Aucun champ défini par le coordonnateur.
+                        </p>
                       )}
                       {(formTemplate.metaFields || []).map((f) => (
                         <div key={f.id}>
                           <label className="block text-sm text-slate-300 mb-1">
-                            {f.label || f.key} {f.required ? <span className="text-red-400">*</span> : null}
+                            {f.label || f.key}{" "}
+                            {f.required ? (
+                              <span className="text-red-400">*</span>
+                            ) : null}
                           </label>
                           {f.type === "textarea" ? (
                             <textarea
                               className="input-modern min-h-[80px]"
                               placeholder={f.placeholder || ""}
                               value={metaValues[f.key] || ""}
-                              onChange={(e) => updateMetaValue(f.key, e.target.value)}
+                              onChange={(e) =>
+                                updateMetaValue(f.key, e.target.value)
+                              }
                             />
                           ) : (
                             <input
                               className="input-modern"
                               placeholder={f.placeholder || ""}
                               value={metaValues[f.key] || ""}
-                              onChange={(e) => updateMetaValue(f.key, e.target.value)}
+                              onChange={(e) =>
+                                updateMetaValue(f.key, e.target.value)
+                              }
                             />
                           )}
                         </div>
@@ -548,7 +678,9 @@ export default function TeacherDashboard() {
                     {/* 2. Planification hebdomadaire */}
                     <div>
                       <div className="flex justify-between items-center mb-2">
-                        <h3 className="font-semibold text-white">2. Planification hebdomadaire</h3>
+                        <h3 className="font-semibold text-white">
+                          2. Planification hebdomadaire
+                        </h3>
                         <button
                           type="button"
                           onClick={addWeek}
@@ -559,7 +691,10 @@ export default function TeacherDashboard() {
                       </div>
                       <div className="space-y-3">
                         {planWeeks.map((w, i) => (
-                          <div key={w.id} className="p-3 rounded border border-dark-border">
+                          <div
+                            key={w.id}
+                            className="p-3 rounded border border-dark-border"
+                          >
                             <div className="flex justify-between items-center mb-2">
                               <strong>{w.label}</strong>
                               <button
@@ -574,13 +709,17 @@ export default function TeacherDashboard() {
                               className="input-modern min-h-[60px]"
                               placeholder="Ce qui sera appris..."
                               value={w.learning}
-                              onChange={(e) => updateWeek(i, "learning", e.target.value)}
+                              onChange={(e) =>
+                                updateWeek(i, "learning", e.target.value)
+                              }
                             />
                             <textarea
                               className="input-modern min-h-[60px] mt-2"
                               placeholder="Devoirs..."
                               value={w.homework}
-                              onChange={(e) => updateWeek(i, "homework", e.target.value)}
+                              onChange={(e) =>
+                                updateWeek(i, "homework", e.target.value)
+                              }
                             />
                           </div>
                         ))}
@@ -590,7 +729,9 @@ export default function TeacherDashboard() {
                     {/* 3. Évaluations */}
                     <div>
                       <div className="flex justify-between items-center mb-2">
-                        <h3 className="font-semibold text-white">3. Évaluations</h3>
+                        <h3 className="font-semibold text-white">
+                          3. Évaluations
+                        </h3>
                         <button
                           type="button"
                           onClick={addExam}
@@ -601,7 +742,10 @@ export default function TeacherDashboard() {
                       </div>
                       <div className="space-y-3">
                         {planExams.map((ex, i) => (
-                          <div key={ex.id} className="p-3 rounded border border-dark-border">
+                          <div
+                            key={ex.id}
+                            className="p-3 rounded border border-dark-border"
+                          >
                             <div className="flex justify-between items-center mb-2">
                               <strong>Évaluation #{i + 1}</strong>
                               <button
@@ -616,80 +760,111 @@ export default function TeacherDashboard() {
                               className="input-modern"
                               placeholder="Titre"
                               value={ex.title}
-                              onChange={(e) => updateExam(i, "title", e.target.value)}
+                              onChange={(e) =>
+                                updateExam(i, "title", e.target.value)
+                              }
                             />
                             <input
                               className="input-modern mt-2"
                               placeholder="Date (YYYY-MM-DD)"
                               value={ex.date}
-                              onChange={(e) => updateExam(i, "date", e.target.value)}
+                              onChange={(e) =>
+                                updateExam(i, "date", e.target.value)
+                              }
                             />
                             <textarea
                               className="input-modern min-h-[60px] mt-2"
                               placeholder="Matière couverte"
                               value={ex.coverage}
-                              onChange={(e) => updateExam(i, "coverage", e.target.value)}
+                              onChange={(e) =>
+                                updateExam(i, "coverage", e.target.value)
+                              }
                             />
                           </div>
                         ))}
                       </div>
                     </div>
 
-                    {/* 4. Questions du plan (modèle uniquement, lecture seule pour libellés) */}
+                    {/* 4. Questions du plan (modèle uniquement) */}
                     <div className="space-y-4">
                       <div className="flex justify-between items-center mb-2">
                         <h3 className="font-semibold text-white">
-                          4. Questions du plan ({(formTemplate.questions || []).length})
+                          4. Questions du plan (
+                          {(formTemplate.questions || []).length})
                         </h3>
                       </div>
 
                       <p className="text-xs text-slate-400">
-                        Les questions sont définies par le coordonnateur. Vous pouvez seulement répondre.
+                        Les questions sont définies par le coordonnateur. Vous
+                        pouvez seulement répondre.
                       </p>
 
                       {(formTemplate.questions || []).map((q, i) => (
-                        <div key={q.id} className="bg-slate-900/50 p-4 rounded-xl border border-slate-700">
+                        <div
+                          key={q.id}
+                          className="bg-slate-900/50 p-4 rounded-xl border border-slate-700"
+                        >
                           <div className="flex justify-between items-start mb-3">
-                            <span className="font-bold text-white">Question #{i + 1}</span>
+                            <span className="font-bold text-white">
+                              Question #{i + 1}
+                            </span>
                           </div>
 
                           <div className="grid md:grid-cols-2 gap-4">
                             <div>
-                              <label className="text-xs text-slate-400 block mb-1">Intitulé de la question</label>
-                              <p className="text-sm text-slate-200">{q.label || "—"}</p>
+                              <label className="text-xs text-slate-400 block mb-1">
+                                Intitulé de la question
+                              </label>
+                              <p className="text-sm text-slate-200">
+                                {q.label || "—"}
+                              </p>
                             </div>
                             <div>
-                              <label className="text-xs text-slate-400 block mb-1">Champ lié (optionnel)</label>
-                              <p className="text-sm text-slate-400">{q.field || "—"}</p>
+                              <label className="text-xs text-slate-400 block mb-1">
+                                Champ lié (optionnel)
+                              </label>
+                              <p className="text-sm text-slate-400">
+                                {q.field || "—"}
+                              </p>
                             </div>
                           </div>
 
                           <div className="mt-4">
-                            <label className="text-xs text-slate-400 block mb-1">Règle de validation IA</label>
+                            <label className="text-xs text-slate-400 block mb-1">
+                              Règle de validation IA
+                            </label>
                             <p className="text-sm text-slate-300 whitespace-pre-wrap">
                               {q.rule || "—"}
                             </p>
                           </div>
 
                           <div className="mt-4">
-                            <label className="text-xs text-slate-400 block mb-1">Votre réponse</label>
+                            <label className="text-xs text-slate-400 block mb-1">
+                              Votre réponse
+                            </label>
                             <textarea
                               className="input-modern min-h-[100px] text-sm"
                               value={answers[q.id] || ""}
-                              onChange={(e) => handleInputChange(q.id, e.target.value)}
+                              onChange={(e) =>
+                                handleInputChange(q.id, e.target.value)
+                              }
                               placeholder="Votre réponse..."
                             />
                           </div>
                         </div>
                       ))}
                     </div>
+
                     {/* 5. Règles principales (lecture seule) */}
                     <div>
                       <h3 className="font-semibold text-white mb-2">
-                        5. Règles principales (indépendantes) ({(formTemplate.aiRules || []).length})
+                        5. Règles principales (indépendantes) (
+                        {(formTemplate.aiRules || []).length})
                       </h3>
                       {(formTemplate.aiRules || []).length === 0 ? (
-                        <p className="text-slate-400 text-sm">Aucune règle définie par le coordonnateur.</p>
+                        <p className="text-slate-400 text-sm">
+                          Aucune règle définie par le coordonnateur.
+                        </p>
                       ) : (
                         <ul className="list-disc pl-5 text-sm text-slate-300">
                           {(formTemplate.aiRules || []).map((r, i) => (
@@ -710,21 +885,35 @@ export default function TeacherDashboard() {
                       </button>
                       <button
                         onClick={handleSubmitPlan}
-                        className={`btn-primary flex-1 ${!analysis ? "opacity-50 cursor-not-allowed" : ""}`}
-                        title={!analysis ? "Analyse requise avant soumission" : ""}
+                        className={`btn-primary flex-1 ${
+                          !analysis ? "opacity-50 cursor-not-allowed" : ""
+                        }`}
+                        title={
+                          !analysis
+                            ? "Analyse requise avant soumission"
+                            : ""
+                        }
                         type="button"
                       >
-                        {submitting ? "Envoi..." : "Soumettre"}
+                        {submitting
+                          ? "Envoi..."
+                          : editingPlan
+                          ? "Enregistrer les modifications"
+                          : "Soumettre"}
                       </button>
                     </div>
 
                     {analysis && (
                       <div
                         className={`p-4 rounded-xl border mt-4 ${
-                          analysis.status === "Conforme" ? "bg-green-900/20 border-green-500" : "bg-red-900/20 border-red-500"
+                          analysis.status === "Conforme"
+                            ? "bg-green-900/20 border-green-500"
+                            : "bg-red-900/20 border-red-500"
                         }`}
                       >
-                        <h3 className="font-bold mb-2">{analysis.status}</h3>
+                        <h3 className="font-bold mb-2">
+                          {analysis.status}
+                        </h3>
                         <ul className="list-disc pl-5 text-sm text-slate-300">
                           {analysis.suggestions.map((s, i) => (
                             <li key={i}>{s}</li>
@@ -742,6 +931,46 @@ export default function TeacherDashboard() {
           </main>
         </div>
       </div>
+
+      {/* MODAL CONFIRMATION MODIFICATION */}
+      {showConfirmEdit && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
+          <div className="bg-dark-bg border border-dark-border p-6 rounded-xl max-w-md w-full">
+            <h2 className="text-xl font-bold text-white mb-4">
+              Modifier ce plan ?
+            </h2>
+            <p className="text-slate-300 mb-6">
+              Modifier ce plan va{" "}
+              <strong>écraser l'ancienne version</strong> et renvoyer
+              une <strong>nouvelle demande d’approbation</strong> au
+              coordonnateur.
+            </p>
+
+            <div className="flex justify-end gap-3">
+              <button
+                className="px-4 py-2 bg-slate-700 rounded hover:bg-slate-600"
+                onClick={() => {
+                  setShowConfirmEdit(false);
+                  setPlanToEdit(null);
+                }}
+              >
+                Annuler
+              </button>
+              <button
+                className="px-4 py-2 bg-blue-600 rounded hover:bg-blue-500"
+                onClick={() => {
+                  setEditingPlan(planToEdit);
+                  setSelectedTemplateId(planToEdit.formId || "");
+                  setShowConfirmEdit(false);
+                  setActiveTab("new");
+                }}
+              >
+                Modifier
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
