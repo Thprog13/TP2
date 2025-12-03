@@ -5,7 +5,7 @@ import lockIcon from "./assets/padlock.png";
 import enterIcon from "./assets/enter.png";
 
 import { auth, db } from "./firebase";
-import { createUserWithEmailAndPassword } from "firebase/auth";
+import { createUserWithEmailAndPassword, sendEmailVerification } from "firebase/auth";
 import { doc, setDoc } from "firebase/firestore";
 import { useNavigate } from "react-router-dom";
 
@@ -72,7 +72,14 @@ export default function Register() {
         createdAt: new Date(),
       });
 
-      alert("Compte créé !");
+      try {
+        await sendEmailVerification(cred.user);
+      } catch (e) {
+        console.error("Erreur envoi email vérification", e);
+      }
+
+      alert("Compte créé ! Un email de vérification vous a été envoyé. Veuillez vérifier votre boîte mail avant de vous connecter.");
+      await auth.signOut();
       navigate("/login");
     } catch (err) {
       console.error(err);

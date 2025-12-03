@@ -7,6 +7,8 @@ import {
   signInWithEmailAndPassword,
   GoogleAuthProvider,
   signInWithPopup,
+  sendEmailVerification,
+  sendPasswordResetEmail,
 } from "firebase/auth";
 import { doc, getDoc, setDoc } from "firebase/firestore";
 import { useNavigate } from "react-router-dom";
@@ -29,6 +31,23 @@ export default function Login() {
 
     try {
       const cred = await signInWithEmailAndPassword(auth, email, password);
+
+      if (!cred.user.emailVerified) {
+        try {
+          await sendEmailVerification(cred.user);
+          alert(
+            "Votre adresse n'est pas vérifiée. Un email de vérification a été renvoyé. Vérifiez votre boîte mail puis reconnectez-vous."
+          );
+        } catch (e) {
+          console.error('Erreur renvoi email vérification', e);
+          alert(
+            "Impossible de renvoyer l'email de vérification automatiquement. Veuillez vérifier votre boîte mail ou contacter l'administrateur."
+          );
+        }
+        await auth.signOut();
+        return;
+      }
+
       const snap = await getDoc(doc(db, "users", cred.user.uid));
 
       if (!snap.exists()) return alert("Compte introuvable.");
@@ -37,6 +56,20 @@ export default function Login() {
     } catch (err) {
       console.error(err);
       alert("Erreur de connexion.");
+    }
+  };
+
+  const handleResetPassword = async () => {
+    if (!email || !email.trim()) {
+      return alert("Entrez votre adresse courriel pour recevoir le lien de réinitialisation.");
+    }
+
+    try {
+      await sendPasswordResetEmail(auth, email.trim());
+      alert("Email de réinitialisation envoyé. Vérifiez votre boîte mail.");
+    } catch (err) {
+      console.error("Erreur envoi reset mot de passe", err);
+      alert("Impossible d'envoyer l'email de réinitialisation. Vérifiez l'adresse ou réessayez plus tard.");
     }
   };
 
@@ -134,6 +167,16 @@ export default function Login() {
               onChange={(e) => setPassword(e.target.value)}
               required
             />
+
+            <div className="text-right">
+              <button
+                type="button"
+                onClick={handleResetPassword}
+                className="text-sm text-primary hover:underline"
+              >
+                Mot de passe oublié ?
+              </button>
+            </div>
 
             <button type="submit" className="w-full btn-primary py-3 text-lg">
               Se connecter
