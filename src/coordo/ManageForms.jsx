@@ -8,13 +8,12 @@ import {
   doc,
   deleteDoc,
   query,
-  orderBy,
   where,
   getDoc,
   serverTimestamp,
 } from "firebase/firestore";
 
-// Helper pour ID stable
+// Helper pour générer des IDs stables (ne change pas à chaque rendu)
 const generateId = () => {
   if (window.crypto && window.crypto.randomUUID) {
     return window.crypto.randomUUID();
@@ -53,24 +52,7 @@ const useAuthInfo = () => {
 
 const defaultCoursePlan = () => ({
   templateName: "",
-  metaFields: [
-    {
-      id: generateId(),
-      key: "title",
-      label: "Titre du cours",
-      type: "text",
-      required: true,
-      placeholder: "Ex: Programmation Web 2",
-    },
-    {
-      id: generateId(),
-      key: "description",
-      label: "Description",
-      type: "textarea",
-      required: false,
-      placeholder: "",
-    },
-  ],
+  metaFields: [],
   weeks: [],
   exams: [],
   questions: [],
@@ -83,23 +65,20 @@ export default function ManageForms() {
   const [templatesList, setTemplatesList] = useState([]);
   const { currentUserId, userRole, isLoading } = useAuthInfo();
 
+  // Chargement des formulaires (Tri client pour éviter l'erreur d'index Firestore)
   const loadForms = async () => {
     if (isLoading || !currentUserId || !userRole) return;
 
-    // Simplification pour éviter erreurs d'index : tri client
-    const formsQuery = query(collection(db, "formTemplates"));
-
     try {
+      const formsQuery = query(collection(db, "formTemplates"));
       const allSnap = await getDocs(formsQuery);
+
       let loadedTemplates = allSnap.docs.map((d) => ({
         id: d.id,
         ...d.data(),
       }));
 
-      // Filtrer si nécessaire (si on veut seulement ceux créés par le user)
-      // loadedTemplates = loadedTemplates.filter(...)
-
-      // Tri Date
+      // Tri par date de création (descendant) via Javascript
       loadedTemplates.sort((a, b) => {
         const ta = a.createdAt?.toDate ? a.createdAt.toDate() : new Date(0);
         const tb = b.createdAt?.toDate ? b.createdAt.toDate() : new Date(0);
@@ -108,7 +87,7 @@ export default function ManageForms() {
 
       setTemplatesList(loadedTemplates);
     } catch (e) {
-      console.error(e);
+      console.error("Erreur chargement templates:", e);
     }
   };
 
@@ -116,14 +95,14 @@ export default function ManageForms() {
     loadForms();
   }, [currentUserId, userRole, isLoading]);
 
-  // --- Questions (FIXED IDs) ---
+  // --- Questions (IDs Stables) ---
   const addQuestion = () =>
     setCoursePlan((prev) => ({
       ...prev,
       questions: [
         ...prev.questions,
         {
-          id: generateId(), // ID Stable UUID
+          id: generateId(), // ID unique généré UNE SEULE FOIS ici
           label: "",
           field: "",
           rule: "",
@@ -149,22 +128,20 @@ export default function ManageForms() {
 
   // --- Meta Fields ---
   const addMetaField = () =>
-    setCoursePlan((prev) => {
-      return {
-        ...prev,
-        metaFields: [
-          ...prev.metaFields,
-          {
-            id: generateId(),
-            key: `field_${generateId().slice(0, 4)}`,
-            label: "",
-            type: "text",
-            required: false,
-            placeholder: "",
-          },
-        ],
-      };
-    });
+    setCoursePlan((prev) => ({
+      ...prev,
+      metaFields: [
+        ...prev.metaFields,
+        {
+          id: generateId(),
+          key: `field_${generateId().slice(0, 4)}`,
+          label: "",
+          type: "text",
+          required: false,
+          placeholder: "",
+        },
+      ],
+    }));
 
   const updateMetaField = (index, keyName, value) =>
     setCoursePlan((prev) => {
@@ -183,16 +160,21 @@ export default function ManageForms() {
   // --- CRUD Operations ---
   const deleteTemplate = async (id) => {
     if (!window.confirm("Supprimer ce modèle ?")) return;
-    await deleteDoc(doc(db, "formTemplates", id));
-    setTemplatesList((prev) => prev.filter((t) => t.id !== id));
-    if (activeFormId === id) {
-      setActiveFormId(null);
-      setCoursePlan(defaultCoursePlan());
+    try {
+      await deleteDoc(doc(db, "formTemplates", id));
+      setTemplatesList((prev) => prev.filter((t) => t.id !== id));
+      if (activeFormId === id) {
+        setActiveFormId(null);
+        setCoursePlan(defaultCoursePlan());
+      }
+    } catch (e) {
+      console.error(e);
     }
   };
 
   const editTemplate = (t) => {
     setActiveFormId(t.id);
+    // On s'assure que les tableaux existent pour éviter les crashs
     setCoursePlan({
       templateName: t.templateName || t.meta?.title || "",
       metaFields: t.metaFields || [],
@@ -232,7 +214,7 @@ export default function ManageForms() {
       alert("Sauvegardé !");
     } catch (e) {
       console.error(e);
-      alert("Erreur sauvegarde");
+      alert("Erreur sauvegarde: " + e.message);
     }
   };
 
@@ -303,25 +285,37 @@ export default function ManageForms() {
               >
                 <button
                   onClick={() => removeMetaField(i)}
-                  className="absolute top-2 right-2 text-red-400 text-xs"
+                  className="absolute top-2 right-2 text-red-400 text-xs hover:underline"
                 >
                   Supprimer
                 </button>
                 <div className="grid grid-cols-2 gap-4">
-                  <input
-                    className="input-modern text-sm"
-                    placeholder="Label (ex: Titre)"
-                    value={f.label}
-                    onChange={(e) =>
-                      updateMetaField(i, "label", e.target.value)
-                    }
-                  />
-                  <input
-                    className="input-modern text-sm"
-                    placeholder="Clé (ex: title)"
-                    value={f.key}
-                    onChange={(e) => updateMetaField(i, "key", e.target.value)}
-                  />
+                  <div>
+                    <label className="text-xs text-slate-500 mb-1 block">
+                      Label visible
+                    </label>
+                    <input
+                      className="input-modern text-sm"
+                      placeholder="Ex: Titre du cours"
+                      value={f.label}
+                      onChange={(e) =>
+                        updateMetaField(i, "label", e.target.value)
+                      }
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs text-slate-500 mb-1 block">
+                      Clé technique (unique)
+                    </label>
+                    <input
+                      className="input-modern text-sm"
+                      placeholder="Ex: title"
+                      value={f.key}
+                      onChange={(e) =>
+                        updateMetaField(i, "key", e.target.value)
+                      }
+                    />
+                  </div>
                 </div>
                 <div className="flex gap-4 items-center">
                   <select
@@ -329,10 +323,10 @@ export default function ManageForms() {
                     value={f.type}
                     onChange={(e) => updateMetaField(i, "type", e.target.value)}
                   >
-                    <option value="text">Texte</option>
+                    <option value="text">Texte court</option>
                     <option value="textarea">Zone de texte</option>
                   </select>
-                  <label className="text-sm text-slate-300 flex items-center gap-2">
+                  <label className="text-sm text-slate-300 flex items-center gap-2 cursor-pointer">
                     <input
                       type="checkbox"
                       checked={f.required}
@@ -340,11 +334,16 @@ export default function ManageForms() {
                         updateMetaField(i, "required", e.target.checked)
                       }
                     />
-                    Requis
+                    Champ requis
                   </label>
                 </div>
               </div>
             ))}
+            {coursePlan.metaFields.length === 0 && (
+              <p className="text-slate-500 text-sm">
+                Aucun champ d'information générale défini.
+              </p>
+            )}
           </div>
         </div>
 
@@ -366,84 +365,114 @@ export default function ManageForms() {
               >
                 <button
                   onClick={() => removeQuestion(i)}
-                  className="absolute top-2 right-2 text-red-400 text-xs"
+                  className="absolute top-2 right-2 text-red-400 text-xs hover:underline"
                 >
                   Supprimer
                 </button>
-                <div className="mb-2 text-xs text-slate-500">ID: {q.id}</div>
                 <div className="grid md:grid-cols-2 gap-4 mb-3">
-                  <input
-                    className="input-modern text-sm"
-                    placeholder="Intitulé"
-                    value={q.label}
-                    onChange={(e) => updateQuestion(i, "label", e.target.value)}
-                  />
-                  <input
-                    className="input-modern text-sm"
-                    placeholder="Champ lié (optionnel)"
-                    value={q.field}
-                    onChange={(e) => updateQuestion(i, "field", e.target.value)}
+                  <div>
+                    <label className="text-xs text-slate-500 mb-1 block">
+                      Intitulé de la question
+                    </label>
+                    <input
+                      className="input-modern text-sm"
+                      placeholder="Ex: Méthodes d'évaluation"
+                      value={q.label}
+                      onChange={(e) =>
+                        updateQuestion(i, "label", e.target.value)
+                      }
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs text-slate-500 mb-1 block">
+                      Champ lié (optionnel)
+                    </label>
+                    <input
+                      className="input-modern text-sm"
+                      placeholder="Ex: weeks"
+                      value={q.field}
+                      onChange={(e) =>
+                        updateQuestion(i, "field", e.target.value)
+                      }
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="text-xs text-slate-500 mb-1 block">
+                    Règle de validation IA
+                  </label>
+                  <textarea
+                    className="input-modern text-sm h-20"
+                    placeholder="Décrivez ce que l'IA doit vérifier..."
+                    value={q.rule}
+                    onChange={(e) => updateQuestion(i, "rule", e.target.value)}
                   />
                 </div>
-                <textarea
-                  className="input-modern text-sm h-20"
-                  placeholder="Règle de validation IA..."
-                  value={q.rule}
-                  onChange={(e) => updateQuestion(i, "rule", e.target.value)}
-                />
               </div>
             ))}
+            {coursePlan.questions.length === 0 && (
+              <p className="text-slate-500 text-sm">Aucune question définie.</p>
+            )}
           </div>
         </div>
 
-        <button onClick={saveForm} className="btn-primary w-full py-3 mt-4">
-          {activeFormId ? "Mettre à jour" : "Sauvegarder"}
+        <button
+          onClick={saveForm}
+          className="btn-primary w-full py-3 mt-4 text-lg"
+        >
+          {activeFormId ? "Mettre à jour le modèle" : "Sauvegarder le modèle"}
         </button>
       </div>
 
-      {/* LISTE */}
+      {/* LISTE DES MODÈLES */}
       <div className="card-modern">
-        <h3 className="text-xl font-bold text-white mb-4">Modèles existants</h3>
+        <h3 className="text-xl font-bold text-white mb-4">
+          Modèles enregistrés
+        </h3>
         <div className="space-y-3">
           {templatesList.map((t) => (
             <div
               key={t.id}
-              className="flex justify-between bg-slate-900 p-4 rounded border border-slate-700"
+              className="flex flex-wrap gap-4 justify-between items-center bg-slate-900 p-4 rounded border border-slate-700 hover:border-blue-500/30 transition-colors"
             >
               <div>
                 <div className="text-white font-bold">
                   {t.templateName || "Sans nom"}
                 </div>
-                <div className="text-xs text-slate-500">
-                  {t.questions?.length || 0} questions
+                <div className="text-xs text-slate-500 mt-1">
+                  {t.metaFields?.length || 0} infos • {t.questions?.length || 0}{" "}
+                  questions
                 </div>
               </div>
               <div className="flex gap-2">
                 <button
                   onClick={() => editTemplate(t)}
-                  className="text-blue-400 text-sm"
+                  className="text-blue-400 text-sm px-3 py-1 bg-blue-900/10 rounded hover:bg-blue-900/20"
                 >
                   Modifier
                 </button>
                 <button
                   onClick={() => toggleActive(t.id, t.active)}
-                  className={`text-sm px-2 rounded ${
+                  className={`text-sm px-3 py-1 rounded ${
                     t.active
-                      ? "bg-green-600 text-white"
-                      : "bg-slate-700 text-slate-400"
+                      ? "bg-green-600 text-white hover:bg-green-500"
+                      : "bg-slate-700 text-slate-300 hover:bg-slate-600"
                   }`}
                 >
                   {t.active ? "Actif" : "Inactif"}
                 </button>
                 <button
                   onClick={() => deleteTemplate(t.id)}
-                  className="text-red-400 text-sm"
+                  className="text-red-400 text-sm px-3 py-1 bg-red-900/10 rounded hover:bg-red-900/20"
                 >
                   Supprimer
                 </button>
               </div>
             </div>
           ))}
+          {templatesList.length === 0 && (
+            <p className="text-slate-500">Aucun modèle trouvé.</p>
+          )}
         </div>
       </div>
     </div>

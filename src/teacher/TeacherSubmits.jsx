@@ -24,8 +24,7 @@ export default function TeacherSubmits() {
       if (!user) return;
 
       try {
-        // 1. On récupère TOUS les plans de ce prof sans trier coté serveur
-        // pour éviter l'erreur "Missing Index" de Firestore
+        // Requête simple SANS orderBy serveur pour éviter l'erreur d'index
         const q = query(
           collection(db, "coursePlans"),
           where("teacherId", "==", user.uid)
@@ -35,11 +34,11 @@ export default function TeacherSubmits() {
 
         let rows = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
 
-        // 2. On trie coté client (Javascript) par date de création (plus récent en haut)
+        // Tri Javascript (Descendant par date de création)
         rows.sort((a, b) => {
           const ta = a.createdAt?.toDate ? a.createdAt.toDate().getTime() : 0;
           const tb = b.createdAt?.toDate ? b.createdAt.toDate().getTime() : 0;
-          return tb - ta; // Descendant
+          return tb - ta;
         });
 
         setSubmits(rows);
@@ -66,7 +65,7 @@ export default function TeacherSubmits() {
           {submits.map((plan) => (
             <div
               key={plan.id}
-              className="bg-dark-bg p-4 rounded-xl border border-dark-border flex justify-between items-center"
+              className="bg-dark-bg p-4 rounded-xl border border-dark-border flex flex-col md:flex-row justify-between items-start md:items-center gap-4"
             >
               <div>
                 <h3 className="font-bold text-white text-lg">
@@ -87,16 +86,15 @@ export default function TeacherSubmits() {
                       {plan.status || "Soumis"}
                     </span>
                     <span className="text-xs text-dark-muted">
-                      | Le {formatDateTime(plan.createdAt)}
+                      | {formatDateTime(plan.createdAt)}
                     </span>
                   </div>
 
                   {plan.coordinatorComment && (
                     <div className="mt-2 text-sm text-slate-300 bg-slate-800/50 p-2 rounded border border-slate-700">
-                      <span className="font-bold text-slate-400 text-xs uppercase">
-                        Feedback :
-                      </span>{" "}
-                      <br />
+                      <span className="font-bold text-slate-400 text-xs uppercase block mb-1">
+                        Feedback du coordonnateur :
+                      </span>
                       {plan.coordinatorComment}
                     </div>
                   )}
