@@ -39,6 +39,7 @@ const generatePDF = (planData, teacherName) => {
   const contentWidth = pageWidth - margin * 2;
 
   // --- LOGIQUE TITRE ---
+  // Trouver le titre dans les réponses si une question s'appelle "Titre"
   let courseTitle = planData.title || "Plan de cours";
   const titleQuestion = (planData.questionsSnapshot || []).find(
     (q) => q.label.toLowerCase() === "titre"
@@ -54,7 +55,7 @@ const generatePDF = (planData, teacherName) => {
   doc.text("PLAN DE COURS", margin, y);
   y += 10;
 
-  // 2. Bloc Info
+  // 2. Bloc Info (Enseignant, Formulaire, etc)
   doc.setFontSize(10);
   doc.setTextColor(80, 80, 80);
 
@@ -62,12 +63,12 @@ const generatePDF = (planData, teacherName) => {
   doc.setFont("helvetica", "bold");
   doc.text(`Enseignant:`, margin, y);
   doc.setFont("helvetica", "normal");
-  doc.text(teacherName, margin + 25, y);
+  doc.text(teacherName, margin + 25, y); // Affiche le NOM, pas l'email
   y += 6;
   doc.setFont("helvetica", "bold");
   doc.text(`Formulaire:`, margin, y);
   doc.setFont("helvetica", "normal");
-  doc.text(courseTitle, margin + 25, y);
+  doc.text(courseTitle, margin + 25, y); // Affiche le Titre du cours
 
   // Droite
   y -= 6;
@@ -86,23 +87,27 @@ const generatePDF = (planData, teacherName) => {
   doc.text("Analysé", pageWidth - margin, y, { align: "right" });
 
   y += 15;
+  // Ligne de séparation
   doc.setDrawColor(200, 200, 200);
   doc.line(margin, y, pageWidth - margin, y);
   y += 10;
 
-  // Fonction helper pour sections
+  // Fonction helper pour ajouter une section stylisée
   const addSection = (title, content, color = BLUE) => {
+    // Nouvelle page si nécessaire
     if (y > 260) {
       doc.addPage();
       y = 20;
     }
 
+    // Titre de la section
     doc.setFont("helvetica", "bold");
     doc.setFontSize(11);
     doc.setTextColor(...color);
     doc.text(title, margin, y);
     y += 5;
 
+    // Contenu dans boîte grise
     doc.setFont("helvetica", "normal");
     doc.setFontSize(10);
     doc.setTextColor(...TEXT_COLOR);
@@ -113,6 +118,7 @@ const generatePDF = (planData, teacherName) => {
     );
     const boxHeight = splitText.length * 5 + 12;
 
+    // Vérif saut de page pour la boîte
     if (y + boxHeight > 280) {
       doc.addPage();
       y = 20;
@@ -122,17 +128,22 @@ const generatePDF = (planData, teacherName) => {
       y += 5;
     }
 
+    // Fond gris
     doc.setFillColor(...GRAY_BG);
     doc.rect(margin, y, contentWidth, boxHeight, "F");
+
+    // Barre colorée à gauche
     doc.setDrawColor(...color);
     doc.setLineWidth(1.5);
     doc.line(margin, y, margin, y + boxHeight);
+
+    // Texte
     doc.text(splitText, margin + 4, y + 8);
 
-    y += boxHeight + 8;
+    y += boxHeight + 8; // Espace après la section
   };
 
-  // Helper Headers
+  // Helper pour Titres de Section Principale
   const addMainHeader = (text, color = TEAL) => {
     if (y > 260) {
       doc.addPage();
@@ -145,9 +156,9 @@ const generatePDF = (planData, teacherName) => {
     y += 10;
   };
 
-  // --- RENDU ---
+  // --- RENDU DES DONNÉES ---
 
-  // Meta Fields
+  // 1. Meta Fields (Description, etc, sauf titre)
   const meta = planData.metaValuesSnapshot || {};
   Object.keys(meta).forEach((key) => {
     if (key !== "title" && meta[key]) {
@@ -155,19 +166,21 @@ const generatePDF = (planData, teacherName) => {
     }
   });
 
-  // Questions
+  // 2. Questions (Filtre "Titre", re-numérotation)
   const questionsToRender = (planData.questionsSnapshot || []).filter(
     (q) => q.label.toLowerCase() !== "titre"
   );
 
   questionsToRender.forEach((q, idx) => {
     const answer = planData.answers[q.id] || "";
+    // idx + 1 car on re-numérote après avoir retiré le titre
     addSection(`Question ${idx + 1}: ${q.label}`, answer, BLUE);
   });
 
-  // Semaines
+  // 3. Semaines (Couleur TEAL pour différencier)
   if (planData.weeksSnapshot && planData.weeksSnapshot.length > 0) {
     addMainHeader("Planification Hebdomadaire", TEAL);
+
     planData.weeksSnapshot.forEach((w) => {
       const text = `Apprentissage: ${w.learning || ""}\nDevoirs: ${
         w.homework || ""
@@ -176,9 +189,10 @@ const generatePDF = (planData, teacherName) => {
     });
   }
 
-  // Évaluations
+  // 4. Évaluations (Couleur TEAL)
   if (planData.examsSnapshot && planData.examsSnapshot.length > 0) {
     addMainHeader("Évaluations", TEAL);
+
     planData.examsSnapshot.forEach((ex, idx) => {
       const title = ex.title || `Évaluation ${idx + 1}`;
       const text = `Date: ${ex.date || "À déterminer"}\nMatière: ${
@@ -188,7 +202,7 @@ const generatePDF = (planData, teacherName) => {
     });
   }
 
-  // Pagination
+  // --- PAGINATION (Footer) ---
   const pageCount = doc.internal.getNumberOfPages();
   for (let i = 1; i <= pageCount; i++) {
     doc.setPage(i);
@@ -222,14 +236,14 @@ export default function TeacherDashboard() {
   const [planWeeks, setPlanWeeks] = useState([]);
   const [planExams, setPlanExams] = useState([]);
 
-  // Modal
+  // Modal Suppression
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(null);
 
   // User Info
   const [teacherFullName, setTeacherFullName] = useState("");
   const currentUser = auth.currentUser;
 
-  // 1. Fetch User
+  // 1. Fetch User Name on Mount
   useEffect(() => {
     const fetchUserName = async () => {
       if (currentUser) {
@@ -237,15 +251,16 @@ export default function TeacherDashboard() {
           const userDoc = await getDoc(doc(db, "users", currentUser.uid));
           if (userDoc.exists()) {
             const data = userDoc.data();
-            setTeacherFullName(
-              data.firstName && data.lastName
-                ? `${data.firstName} ${data.lastName}`
-                : currentUser.email
-            );
+            if (data.firstName && data.lastName) {
+              setTeacherFullName(`${data.firstName} ${data.lastName}`);
+            } else {
+              setTeacherFullName(currentUser.email);
+            }
           } else {
-            setTeacherFullName(currentUser.email);
+            setTeacherFullName(currentUser.displayName || currentUser.email);
           }
         } catch (e) {
+          console.error("Erreur fetch user:", e);
           setTeacherFullName(currentUser.email);
         }
       }
@@ -253,7 +268,7 @@ export default function TeacherDashboard() {
     fetchUserName();
   }, [currentUser]);
 
-  // 2. Charger Plans
+  // 2. Charger MES plans
   useEffect(() => {
     if (activeTab === "plans" && currentUser) {
       const load = async () => {
@@ -269,14 +284,14 @@ export default function TeacherDashboard() {
           );
           setPlans(rows);
         } catch (e) {
-          console.error(e);
+          console.error("Erreur chargement plans:", e);
         }
       };
       load();
     }
   }, [activeTab, currentUser]);
 
-  // 3. Charger Templates
+  // 3. Charger les Modèles
   useEffect(() => {
     if (activeTab === "new") {
       const load = async () => {
@@ -291,7 +306,7 @@ export default function TeacherDashboard() {
     }
   }, [activeTab]);
 
-  // 4. Sélection/Édition
+  // 4. Gérer la sélection / édition
   useEffect(() => {
     if (activeTab !== "new") return;
 
@@ -331,6 +346,7 @@ export default function TeacherDashboard() {
 
   const handleAnswerChange = (qId, val) =>
     setAnswers((prev) => ({ ...prev, [qId]: val }));
+
   const addWeek = () =>
     setPlanWeeks((prev) => [
       ...prev,
@@ -348,10 +364,11 @@ export default function TeacherDashboard() {
         .map((w, i) => ({ ...w, label: `Semaine ${i + 1}` }))
     );
   const updateWeek = (idx, field, val) => {
-    const n = [...planWeeks];
-    n[idx][field] = val;
-    setPlanWeeks(n);
+    const newWeeks = [...planWeeks];
+    newWeeks[idx][field] = val;
+    setPlanWeeks(newWeeks);
   };
+
   const addExam = () =>
     setPlanExams((prev) => [
       ...prev,
@@ -360,9 +377,9 @@ export default function TeacherDashboard() {
   const removeExam = (idx) =>
     setPlanExams((prev) => prev.filter((_, i) => i !== idx));
   const updateExam = (idx, field, val) => {
-    const n = [...planExams];
-    n[idx][field] = val;
-    setPlanExams(n);
+    const newExams = [...planExams];
+    newExams[idx][field] = val;
+    setPlanExams(newExams);
   };
 
   const handleDeletePlan = async (planId) => {
@@ -371,11 +388,11 @@ export default function TeacherDashboard() {
       setPlans((prev) => prev.filter((p) => p.id !== planId));
       setShowDeleteConfirm(null);
     } catch (e) {
-      alert("Erreur suppression");
+      console.error(e);
+      alert("Erreur lors de la suppression.");
     }
   };
 
-  // --- ANALYSE IA ---
   const analyzePlan = async () => {
     if (!formTemplate) return;
     setIsAnalyzing(true);
@@ -436,7 +453,9 @@ export default function TeacherDashboard() {
     setSubmitting(true);
 
     try {
+      // Logique de titre pour sauvegarde
       let rawTitle = metaValues.title || "Plan de cours";
+      // Si titre est dans les réponses (cas du template user)
       if (formTemplate) {
         const titleQ = formTemplate.questions.find(
           (q) => q.label.toLowerCase() === "titre"
@@ -446,6 +465,7 @@ export default function TeacherDashboard() {
         }
       }
 
+      // --- FILENAME GENERATION ---
       const safeName = (teacherFullName || "Prof").replace(
         /[^a-zA-Z0-9]/g,
         "_"
@@ -764,6 +784,7 @@ export default function TeacherDashboard() {
                                 }
                               />
                               <input
+                                type="date"
                                 className="input-modern py-2 text-sm"
                                 placeholder="Date"
                                 value={ex.date}
