@@ -10,7 +10,7 @@ import {
   query,
   orderBy,
 } from "firebase/firestore";
-import { analyzeAnswerWithAI } from "../services/openaiService"; // Import du service AI
+import { analyzeAnswerWithAI } from "../services/openaiService";
 
 export default function ValidatePlans() {
   const [plans, setPlans] = useState([]);
@@ -42,7 +42,7 @@ export default function ValidatePlans() {
                   : u.email;
               }
             } catch (e) {
-              console.error("Erreur récupération prof", e);
+              console.error("Erreur lors de la récupération du prof", e);
             }
           }
           return { id: d.id, ...data, teacherName };
@@ -50,7 +50,7 @@ export default function ValidatePlans() {
       );
       setPlans(plansData);
     } catch (error) {
-      console.error("Erreur chargement plans:", error);
+      console.error("Erreur lors du chargement des plans:", error);
     }
   };
 
@@ -74,13 +74,13 @@ export default function ValidatePlans() {
 
   const normalize = (s) => (s || "").toString().trim().toLowerCase();
   const countSubmitted = filteredPlans.filter(
-    (p) => normalize(p.status) === "soumis"
+    (p) => normalize(p.status) === "Soumis"
   ).length;
   const countToCorrect = filteredPlans.filter(
-    (p) => normalize(p.status) === "à corriger"
+    (p) => normalize(p.status) === "À corriger"
   ).length;
   const countApproved = filteredPlans.filter(
-    (p) => normalize(p.status) === "approuvé"
+    (p) => normalize(p.status) === "Approuvé"
   ).length;
 
   // --- ANALYSE IA CÔTÉ COORDO ---
@@ -148,7 +148,7 @@ export default function ValidatePlans() {
         aiValidation: aiResult,
       });
     } catch (e) {
-      console.error("Erreur analyse IA Coordo:", e);
+      console.error("Erreur d'analyse IA Coordo:", e);
     } finally {
       setAiLoading(false);
     }
@@ -168,7 +168,7 @@ export default function ValidatePlans() {
       setSelectedPlan(null);
       loadPlans();
     } catch (e) {
-      console.error("Erreur mise à jour statut:", e);
+      console.error("Erreur lors de la mise à jour du statut:", e);
       alert("Erreur lors de la mise à jour.");
     }
   };
