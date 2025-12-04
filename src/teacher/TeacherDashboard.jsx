@@ -1,4 +1,3 @@
-// src/teacher/TeacherDashboard.jsx
 import React, { useEffect, useState } from "react";
 import SidebarTeacher from "./SidebarTeacher";
 import TeacherSettings from "./TeacherSettings";
