@@ -14,7 +14,7 @@ export default function SidebarTeacher({ activeTab, setActiveTab }) {
 
   return (
     <div className="w-64 bg-dark-card border-r border-dark-border min-h-[calc(100vh-64px)] flex flex-col p-4 space-y-2">
-      
+
       <div className="text-xs font-bold text-dark-muted uppercase tracking-wider mb-2 px-2">
         Enseignant
       </div>
