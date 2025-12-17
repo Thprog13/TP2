@@ -1,5 +1,5 @@
 import { initializeApp } from "firebase/app";
-import { getAuth } from "firebase/auth";
+import { getAuth, GoogleAuthProvider, GithubAuthProvider } from "firebase/auth"; // Connexion git et google
 import { getFirestore } from "firebase/firestore";
 import { getStorage } from "firebase/storage";
 
